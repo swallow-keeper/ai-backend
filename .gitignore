@@ -1,3 +1,5 @@
 swallow-keeper-development-plan.md
 data/
+.cache/
 .DS_Store
+__pycache__/
