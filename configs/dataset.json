@@ -1,0 +1,13 @@
+{
+  "sample_rate_hz": 4000,
+  "vfss_frame_rate_hz": 60,
+  "window_seconds": 2.0,
+  "stride_seconds": 0.25,
+  "positive_overlap_ratio": 0.1,
+  "split_seed": 20261011,
+  "split_ratios": {
+    "train": 0.7,
+    "validation": 0.15,
+    "test": 0.15
+  }
+}
