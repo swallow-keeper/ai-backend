@@ -1,5 +1,8 @@
 swallow-keeper-development-plan.md
 data/
 .cache/
+.venv/
+runs/
+*.egg-info/
 .DS_Store
 __pycache__/
