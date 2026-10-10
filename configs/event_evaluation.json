@@ -1,0 +1,6 @@
+{
+  "score_threshold": 0.5,
+  "minimum_event_seconds": 0.1,
+  "merge_gap_seconds": 0.1,
+  "minimum_iou": 0.1
+}
