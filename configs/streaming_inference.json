@@ -1,0 +1,8 @@
+{
+  "sample_rate_hz": 4000,
+  "window_seconds": 2.0,
+  "stride_seconds": 0.25,
+  "score_threshold": 0.5,
+  "merge_gap_seconds": 0.1,
+  "chunk_samples": 1000
+}
