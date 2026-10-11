@@ -11,7 +11,7 @@ from typing import TypedDict, cast
 import torch
 from torch import nn
 
-from model_registry import create_model, model_spec
+from model_registry import ModelSpec, create_model, model_spec
 
 
 CHECKPOINT_SCHEMA_VERSION = 1
@@ -44,7 +44,7 @@ class DatasetMetadata(TypedDict):
 class Checkpoint(TypedDict):
     schema_version: int
     model_name: str
-    model_spec: dict[str, object]
+    model_spec: ModelSpec
     model_state_dict: dict[str, torch.Tensor]
     normalizer: dict[str, object]
     preprocessing: PreprocessingMetadata

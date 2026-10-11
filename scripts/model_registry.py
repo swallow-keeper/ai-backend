@@ -4,12 +4,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TypedDict
 
 import torch
 from torch import nn
 
 
 MODEL_NAMES = ("statistical_features", "one_dimensional_cnn", "spectrogram_cnn")
+
+
+class ModelSpec(TypedDict, total=False):
+    input_channels: int
+    channels: list[int]
+    dropout: float
+    n_fft: int
+    hop_length: int
 
 
 @dataclass(frozen=True)
@@ -70,6 +79,7 @@ class SpectrogramCNN(nn.Module):
         super().__init__()
         self.n_fft = 256
         self.hop_length = 128
+        self.window: torch.Tensor
         self.register_buffer("window", torch.hann_window(self.n_fft))
         self.features = nn.Sequential(
             nn.Conv2d(input_channels, 16, kernel_size=3, padding=1),
@@ -105,7 +115,7 @@ class SpectrogramCNN(nn.Module):
         return self.classifier(self.features(magnitude)).squeeze(1)
 
 
-def model_spec(model_name: str) -> dict[str, object]:
+def model_spec(model_name: str) -> ModelSpec:
     if model_name == "one_dimensional_cnn":
         return {
             "input_channels": 4,
@@ -119,7 +129,7 @@ def model_spec(model_name: str) -> dict[str, object]:
     raise ValueError(f"Unknown model name: {model_name}")
 
 
-def create_model(model_name: str, spec: dict[str, object] | None = None) -> nn.Module:
+def create_model(model_name: str, spec: ModelSpec | None = None) -> nn.Module:
     spec = spec or model_spec(model_name)
     if model_name == "one_dimensional_cnn":
         return SwallowCNN(
