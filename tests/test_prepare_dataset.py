@@ -32,6 +32,16 @@ class PrepareDatasetTests(unittest.TestCase):
             [0, 1_000, 2_000, 2_500],
         )
 
+    def test_short_recording_has_no_training_window(self) -> None:
+        self.assertEqual(
+            prepare_dataset.window_starts(7_999, window_samples=8_000, stride_samples=1_000),
+            [],
+        )
+        self.assertEqual(
+            prepare_dataset.window_starts(8_000, window_samples=8_000, stride_samples=1_000),
+            [0],
+        )
+
     def test_overlapping_interval_marks_positive_window(self) -> None:
         recording = prepare_dataset.Recording(
             file_name="s001a_1",

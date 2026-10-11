@@ -11,7 +11,9 @@ The upstream collector must provide:
 - a configured 4 kHz rate until a new model is trained for another rate;
 - monotonic sample offsets, including an explicit marker for packet loss or discontinuity.
 
-The detector receives chunks, creates overlapping 2-second windows every 0.25 seconds, normalizes with the train-only checkpoint values, and produces a score. Consecutive score-positive windows are merged into an event. An active event is emitted after enough negative window time or at stream end.
+The detector emits no model result until a complete 2-second window is available; this is the `warming_up` state, not a no-swallow decision. It then creates overlapping windows every 0.25 seconds, normalizes with the train-only checkpoint values, and produces a score.
+
+Offline evaluation and streaming use the same causal reconstruction order: average all currently final window scores per sample, apply the score threshold, merge active spans separated by no more than `merge_gap_seconds`, then discard events shorter than `minimum_event_seconds`. A sample becomes final only after no future window can overlap it. This introduces bounded look-ahead latency of up to one stride plus event merge waiting; streaming must not use scores from windows that have not yet completed.
 
 The event output contains start/end sample positions, emission position, score, and algorithmic latency. It only means that the model detected a swallow-like signal pattern; it is not an aspiration, safety, or clinical judgment.
 

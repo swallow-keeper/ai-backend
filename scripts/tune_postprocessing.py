@@ -9,7 +9,8 @@ import json
 from pathlib import Path
 from typing import TypedDict
 
-from evaluate_events import event_metrics, load_rows, load_targets, predict_window_scores, scores_to_events
+from evaluate_events import event_metrics, load_rows, load_targets, predict_window_scores
+from event_postprocessing import EventConfig, reconstruct_events
 from model_artifacts import file_sha256, load_checkpoint
 from train_baseline import choose_device
 
@@ -50,6 +51,7 @@ def main() -> None:
     sample_rate_hz = int(summary["config"]["sample_rate_hz"])
     frame_rate_hz = int(summary["config"]["vfss_frame_rate_hz"])
     window_samples = int(summary["config"]["window_samples"])
+    stride_samples = int(summary["config"]["stride_samples"])
     scores_by_file = predict_window_scores(
         model,
         rows,
@@ -79,12 +81,15 @@ def main() -> None:
             "minimum_iou": search["minimum_iou"],
         }
         predictions_by_file = {
-            file_name: scores_to_events(
-                signal_lengths[file_name],
+            file_name: reconstruct_events(
                 scores,
-                threshold,
-                round(minimum_seconds * sample_rate_hz),
-                round(merge_seconds * sample_rate_hz),
+                EventConfig(
+                    threshold,
+                    round(minimum_seconds * sample_rate_hz),
+                    round(merge_seconds * sample_rate_hz),
+                ),
+                stride_samples,
+                signal_lengths[file_name],
             )
             for file_name, scores in scores_by_file.items()
         }

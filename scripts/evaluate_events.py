@@ -15,6 +15,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from audit_dataset import frame_to_sample, read_label_rows
+from event_postprocessing import EventConfig, reconstruct_events
 from model_artifacts import file_sha256, load_checkpoint
 from train_baseline import SwallowWindowDataset, choose_device
 
@@ -240,6 +241,7 @@ def main() -> None:
     sample_rate_hz = int(dataset_summary["config"]["sample_rate_hz"])
     frame_rate_hz = int(dataset_summary["config"]["vfss_frame_rate_hz"])
     window_samples = int(dataset_summary["config"]["window_samples"])
+    stride_samples = int(dataset_summary["config"]["stride_samples"])
     scores_by_file = predict_window_scores(
         model,
         rows,
@@ -255,12 +257,15 @@ def main() -> None:
         frame_rate_hz,
     )
     predictions_by_file = {
-        file_name: scores_to_events(
-            signal_lengths[file_name],
+        file_name: reconstruct_events(
             scores,
-            evaluation_config["score_threshold"],
-            round(evaluation_config["minimum_event_seconds"] * sample_rate_hz),
-            round(evaluation_config["merge_gap_seconds"] * sample_rate_hz),
+            EventConfig(
+                evaluation_config["score_threshold"],
+                round(evaluation_config["minimum_event_seconds"] * sample_rate_hz),
+                round(evaluation_config["merge_gap_seconds"] * sample_rate_hz),
+            ),
+            stride_samples,
+            signal_lengths[file_name],
         )
         for file_name, scores in scores_by_file.items()
     }

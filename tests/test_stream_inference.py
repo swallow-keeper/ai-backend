@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from torch import nn
 
+from event_postprocessing import EventConfig, reconstruct_events
 
 SCRIPTS_DIRECTORY = Path(__file__).parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIRECTORY))
@@ -25,6 +26,22 @@ class MeanLogitModel(nn.Module):
 
 
 class StreamInferenceTests(unittest.TestCase):
+    def test_short_stream_remains_in_warming_up_state(self) -> None:
+        config = stream_inference.StreamingConfig(4, 1.0, 0.5, 2)
+        detector = stream_inference.StreamingSwallowDetector(
+            MeanLogitModel(),
+            np.zeros(4),
+            np.ones(4),
+            config,
+            EventConfig(0.5, 1, 0),
+            torch.device("cpu"),
+        )
+
+        events = detector.ingest(np.zeros((3, 4), dtype=np.float32))
+
+        self.assertEqual(events, [])
+        self.assertEqual(detector.status, "warming_up")
+
     def test_assembler_merges_positive_windows_and_flushes(self) -> None:
         assembler = stream_inference.OnlineEventAssembler(score_threshold=0.5, merge_gap_samples=100)
 
@@ -43,8 +60,6 @@ class StreamInferenceTests(unittest.TestCase):
             sample_rate_hz=4,
             window_seconds=1.0,
             stride_seconds=0.5,
-            score_threshold=0.5,
-            merge_gap_seconds=0.0,
             chunk_samples=2,
         )
         detector = stream_inference.StreamingSwallowDetector(
@@ -52,6 +67,7 @@ class StreamInferenceTests(unittest.TestCase):
             np.zeros(4),
             np.ones(4),
             config,
+            EventConfig(score_threshold=0.5, minimum_event_samples=1, merge_gap_samples=0),
             torch.device("cpu"),
         )
 
@@ -64,3 +80,35 @@ class StreamInferenceTests(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertEqual(events[0].start_sample, 0)
         self.assertEqual(events[0].end_sample, 6)
+
+    def test_streaming_and_offline_share_event_boundaries(self) -> None:
+        config = stream_inference.StreamingConfig(4, 1.0, 0.5, 2)
+        event_config = EventConfig(0.5, 1, 0)
+        detector = stream_inference.StreamingSwallowDetector(
+            MeanLogitModel(),
+            np.zeros(4),
+            np.ones(4),
+            config,
+            event_config,
+            torch.device("cpu"),
+        )
+        chunks = [
+            np.full((2, 4), 10.0, dtype=np.float32),
+            np.full((2, 4), 10.0, dtype=np.float32),
+            np.zeros((2, 4), dtype=np.float32),
+        ]
+        streaming_events = []
+        for chunk in chunks:
+            streaming_events.extend(detector.ingest(chunk))
+        streaming_events.extend(detector.flush())
+        offline_events = reconstruct_events(
+            [(0, 4, 0.99995), (2, 6, 0.99331)],
+            event_config,
+            stride_samples=2,
+            signal_samples=6,
+        )
+
+        self.assertEqual(
+            [(event.start_sample, event.end_sample) for event in streaming_events],
+            [(event.start_sample, event.end_sample) for event in offline_events],
+        )

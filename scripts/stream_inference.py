@@ -13,6 +13,7 @@ import numpy as np
 import torch
 from torch import nn
 
+from event_postprocessing import CausalEventPostprocessor, Event as StreamEvent, EventConfig
 from model_artifacts import load_checkpoint
 from train_baseline import choose_device
 
@@ -22,8 +23,6 @@ class StreamingConfig:
     sample_rate_hz: int
     window_seconds: float
     stride_seconds: float
-    score_threshold: float
-    merge_gap_seconds: float
     chunk_samples: int
 
     @property
@@ -33,19 +32,6 @@ class StreamingConfig:
     @property
     def stride_samples(self) -> int:
         return round(self.stride_seconds * self.sample_rate_hz)
-
-    @property
-    def merge_gap_samples(self) -> int:
-        return round(self.merge_gap_seconds * self.sample_rate_hz)
-
-
-@dataclass(frozen=True)
-class StreamEvent:
-    start_sample: int
-    end_sample: int
-    emitted_at_sample: int
-    mean_score: float
-
 
 class OnlineEventAssembler:
     def __init__(self, score_threshold: float, merge_gap_samples: int) -> None:
@@ -104,6 +90,7 @@ class StreamingSwallowDetector:
         mean: np.ndarray,
         std: np.ndarray,
         config: StreamingConfig,
+        event_config: EventConfig,
         device: torch.device,
     ) -> None:
         self.model = model.to(device).eval()
@@ -111,7 +98,7 @@ class StreamingSwallowDetector:
         self.std = std.astype(np.float32)
         self.config = config
         self.device = device
-        self.assembler = OnlineEventAssembler(config.score_threshold, config.merge_gap_samples)
+        self.processor = CausalEventPostprocessor(event_config, config.stride_samples)
         self.buffer = np.empty((0, len(mean)), dtype=np.float32)
         self.buffer_start = 0
         self.received_samples = 0
@@ -134,7 +121,7 @@ class StreamingSwallowDetector:
             window = self.buffer[start_index:end_index]
             score = self._score_window(window)
             emitted.extend(
-                self.assembler.add_score(
+                self.processor.add_window_score(
                     self.next_window_start,
                     self.next_window_start + self.config.window_samples,
                     score,
@@ -148,7 +135,11 @@ class StreamingSwallowDetector:
         return emitted
 
     def flush(self) -> list[StreamEvent]:
-        return self.assembler.flush(self.received_samples)
+        return self.processor.flush(self.received_samples)
+
+    @property
+    def status(self) -> str:
+        return "warming_up" if self.window_count == 0 else "monitoring"
 
     def _score_window(self, window: np.ndarray) -> float:
         normalized = (window - self.mean) / self.std
@@ -169,6 +160,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--signal", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, default=Path("runs/baseline/best_model.pt"))
     parser.add_argument("--config", type=Path, default=Path("configs/streaming_inference.json"))
+    parser.add_argument("--event-config", type=Path, default=Path("configs/event_evaluation.json"))
     parser.add_argument("--output-dir", type=Path, default=Path("runs/streaming"))
     parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     return parser.parse_args()
@@ -178,8 +170,6 @@ def load_config(path: Path) -> StreamingConfig:
     config = StreamingConfig(**json.loads(path.read_text(encoding="utf-8")))
     if config.window_samples <= 0 or config.stride_samples <= 0 or config.chunk_samples <= 0:
         raise ValueError("Window, stride, and chunk sizes must be positive.")
-    if not 0 <= config.score_threshold <= 1:
-        raise ValueError("score_threshold must be in [0, 1].")
     return config
 
 
@@ -196,6 +186,12 @@ def event_payload(event: StreamEvent, sample_rate_hz: int) -> dict[str, float | 
 def main() -> None:
     arguments = parse_arguments()
     config = load_config(arguments.config)
+    event_values = json.loads(arguments.event_config.read_text(encoding="utf-8"))
+    event_config = EventConfig(
+        event_values["score_threshold"],
+        round(event_values["minimum_event_seconds"] * config.sample_rate_hz),
+        round(event_values["merge_gap_seconds"] * config.sample_rate_hz),
+    )
     device = choose_device(arguments.device)
     model, checkpoint = load_checkpoint(arguments.checkpoint, device)
     normalizer = checkpoint["normalizer"]
@@ -208,6 +204,7 @@ def main() -> None:
         np.asarray(normalizer["mean"]),
         np.asarray(normalizer["std"]),
         config,
+        event_config,
         device,
     )
     events: list[StreamEvent] = []
@@ -222,6 +219,7 @@ def main() -> None:
         "signal_samples": int(signal.shape[0]),
         "chunk_samples": config.chunk_samples,
         "window_count": detector.window_count,
+        "status": detector.status,
         "wall_inference_seconds": elapsed_seconds,
         "wall_seconds_per_window": elapsed_seconds / detector.window_count if detector.window_count else 0.0,
         "events": [event_payload(event, config.sample_rate_hz) for event in events],

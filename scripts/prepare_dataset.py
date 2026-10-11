@@ -155,8 +155,8 @@ def split_participants(
 
 
 def window_starts(signal_samples: int, window_samples: int, stride_samples: int) -> list[int]:
-    if signal_samples <= window_samples:
-        return [0]
+    if signal_samples < window_samples:
+        return []
     starts = list(range(0, signal_samples - window_samples + 1, stride_samples))
     final_start = signal_samples - window_samples
     if starts[-1] != final_start:

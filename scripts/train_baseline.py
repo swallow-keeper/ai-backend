@@ -61,14 +61,11 @@ class SwallowWindowDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         start = int(row["window_start"])
         end = int(row["window_end"])
         values = np.asarray(signal[start:end], dtype=np.float32)
-        values = (values - self.mean) / self.std
-
-        if values.shape[0] < self.window_samples:
-            padding = np.zeros(
-                (self.window_samples - values.shape[0], values.shape[1]),
-                dtype=np.float32,
+        if values.shape[0] != self.window_samples:
+            raise ValueError(
+                f"{row['file_name']} has a short window. Regenerate the dataset manifest with the full-window policy."
             )
-            values = np.concatenate((values, padding), axis=0)
+        values = (values - self.mean) / self.std
         return (
             torch.from_numpy(values.T.copy()),
             torch.tensor(float(row["label"]), dtype=torch.float32),

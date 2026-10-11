@@ -33,5 +33,6 @@ Every recording belonging to one full `participant` value is assigned to exactly
 - `start` and `end` are converted with `round(frame * 4000 / 60)`.
 - Intervals outside the signal boundary are dropped. Their source records remain in the Phase 1 audit report.
 - A window is positive when its valid swallow overlap is at least 10% of the configured 2-second window.
+- Recordings shorter than one complete 2-second window create no training or evaluation window. They are reported as unavailable for model inference, not as non-swallow signals.
 - Empty-label CSV files are excluded. They are not proven non-swallow recordings.
 - Inference must apply the saved train-only normalizer and must not recalculate statistics from validation, test, or streaming input.
