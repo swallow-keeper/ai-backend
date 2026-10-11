@@ -7,10 +7,23 @@ import argparse
 import itertools
 import json
 from pathlib import Path
+from typing import TypedDict
 
 from evaluate_events import event_metrics, load_rows, load_targets, predict_window_scores, scores_to_events
 from model_artifacts import file_sha256, load_checkpoint
 from train_baseline import choose_device
+
+
+class EventConfig(TypedDict):
+    score_threshold: float
+    minimum_event_seconds: float
+    merge_gap_seconds: float
+    minimum_iou: float
+
+
+class TuningCandidate(TypedDict):
+    event_config: EventConfig
+    metrics: dict[str, float]
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -52,14 +65,14 @@ def main() -> None:
         frame_rate_hz,
     )
     total_duration_seconds = sum(signal_lengths.values()) / sample_rate_hz
-    candidates: list[dict[str, object]] = []
+    candidates: list[TuningCandidate] = []
 
     for threshold, minimum_seconds, merge_seconds in itertools.product(
         search["score_thresholds"],
         search["minimum_event_seconds"],
         search["merge_gap_seconds"],
     ):
-        event_config = {
+        event_config: EventConfig = {
             "score_threshold": threshold,
             "minimum_event_seconds": minimum_seconds,
             "merge_gap_seconds": merge_seconds,
@@ -82,7 +95,7 @@ def main() -> None:
             search["minimum_iou"],
             sample_rate_hz,
         )
-        candidates.append({"event_config": event_config, "metrics": metrics})
+        candidates.append(TuningCandidate(event_config=event_config, metrics=metrics))
 
     selected = max(
         candidates,
