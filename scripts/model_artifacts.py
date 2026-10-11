@@ -97,7 +97,7 @@ def save_checkpoint(
             "normalizer": normalizer,
             "preprocessing": {
                 "input_layout": "channels_first",
-                "padding_policy": "zero_after_train_normalization",
+                "padding_policy": "full_window_required_no_padding",
                 "sample_rate_hz": dataset["summary"]["config"]["sample_rate_hz"],
                 "window_samples": dataset["summary"]["config"]["window_samples"],
             },
