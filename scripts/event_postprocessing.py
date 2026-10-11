@@ -12,8 +12,8 @@ import numpy as np
 class Event:
     start_sample: int
     end_sample: int
-    emitted_at_sample: int
-    mean_score: float
+    emitted_at_sample: int = 0
+    mean_score: float = 0.0
 
 
 @dataclass(frozen=True)

@@ -7,7 +7,6 @@ import argparse
 import csv
 import json
 from collections import defaultdict
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -15,16 +14,9 @@ import torch
 from torch.utils.data import DataLoader
 
 from audit_dataset import frame_to_sample, read_label_rows
-from event_postprocessing import EventConfig, reconstruct_events
+from event_postprocessing import Event, EventConfig, reconstruct_events
 from model_artifacts import file_sha256, load_checkpoint
 from train_baseline import SwallowWindowDataset, choose_device
-
-
-@dataclass(frozen=True)
-class Event:
-    start_sample: int
-    end_sample: int
-    score: float | None = None
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -49,44 +41,6 @@ def interval_iou(left: Event, right: Event) -> float:
     intersection = max(0, min(left.end_sample, right.end_sample) - max(left.start_sample, right.start_sample))
     union = max(left.end_sample, right.end_sample) - min(left.start_sample, right.start_sample)
     return intersection / union if union else 0.0
-
-
-def scores_to_events(
-    signal_samples: int,
-    window_scores: list[tuple[int, int, float]],
-    score_threshold: float,
-    minimum_event_samples: int,
-    merge_gap_samples: int,
-) -> list[Event]:
-    sums = np.zeros(signal_samples, dtype=np.float32)
-    counts = np.zeros(signal_samples, dtype=np.uint16)
-    for start, end, score in window_scores:
-        sums[start:end] += score
-        counts[start:end] += 1
-
-    scores = np.divide(sums, counts, out=np.zeros_like(sums), where=counts > 0)
-    active = scores >= score_threshold
-    change_indices = np.flatnonzero(np.diff(active.astype(np.int8))) + 1
-    boundaries = np.concatenate(([0], change_indices, [signal_samples]))
-    raw_events = [
-        Event(int(start), int(end), float(scores[start:end].mean()))
-        for start, end in zip(boundaries[:-1], boundaries[1:], strict=True)
-        if active[start]
-    ]
-
-    merged: list[Event] = []
-    for event in raw_events:
-        if merged and event.start_sample - merged[-1].end_sample <= merge_gap_samples:
-            previous = merged.pop()
-            merged.append(Event(previous.start_sample, event.end_sample, None))
-        else:
-            merged.append(event)
-
-    return [
-        Event(event.start_sample, event.end_sample, float(scores[event.start_sample:event.end_sample].mean()))
-        for event in merged
-        if event.end_sample - event.start_sample >= minimum_event_samples
-    ]
 
 
 def match_events(

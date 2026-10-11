@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import TypedDict
 
 from evaluate_events import event_metrics, load_rows, load_targets, predict_window_scores
-from event_postprocessing import EventConfig, reconstruct_events
+from event_postprocessing import EventConfig as PostprocessConfig, reconstruct_events
 from model_artifacts import file_sha256, load_checkpoint
 from train_baseline import choose_device
 
 
-class EventConfig(TypedDict):
+class EventConfigOutput(TypedDict):
     score_threshold: float
     minimum_event_seconds: float
     merge_gap_seconds: float
@@ -23,7 +23,7 @@ class EventConfig(TypedDict):
 
 
 class TuningCandidate(TypedDict):
-    event_config: EventConfig
+    event_config: EventConfigOutput
     metrics: dict[str, float]
 
 
@@ -74,19 +74,19 @@ def main() -> None:
         search["minimum_event_seconds"],
         search["merge_gap_seconds"],
     ):
-        event_config: EventConfig = {
-            "score_threshold": threshold,
-            "minimum_event_seconds": minimum_seconds,
-            "merge_gap_seconds": merge_seconds,
-            "minimum_iou": search["minimum_iou"],
+        event_config: EventConfigOutput = {
+            "score_threshold": float(threshold),
+            "minimum_event_seconds": float(minimum_seconds),
+            "merge_gap_seconds": float(merge_seconds),
+            "minimum_iou": float(search["minimum_iou"]),
         }
         predictions_by_file = {
             file_name: reconstruct_events(
                 scores,
-                EventConfig(
-                    threshold,
-                    round(minimum_seconds * sample_rate_hz),
-                    round(merge_seconds * sample_rate_hz),
+                PostprocessConfig(
+                    float(threshold),
+                    round(float(minimum_seconds) * sample_rate_hz),
+                    round(float(merge_seconds) * sample_rate_hz),
                 ),
                 stride_samples,
                 signal_lengths[file_name],
