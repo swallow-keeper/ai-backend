@@ -10,8 +10,9 @@ SCRIPTS_DIRECTORY = Path(__file__).parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIRECTORY))
 SCRIPT_PATH = SCRIPTS_DIRECTORY / "compare_models.py"
 SPECIFICATION = importlib.util.spec_from_file_location("compare_models", SCRIPT_PATH)
+if SPECIFICATION is None or SPECIFICATION.loader is None:
+    raise ImportError(f"Unable to load test module from {SCRIPT_PATH}")
 compare_models = importlib.util.module_from_spec(SPECIFICATION)
-assert SPECIFICATION.loader is not None
 sys.modules[SPECIFICATION.name] = compare_models
 SPECIFICATION.loader.exec_module(compare_models)
 

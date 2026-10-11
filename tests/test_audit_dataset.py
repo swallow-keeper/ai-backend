@@ -6,8 +6,9 @@ import unittest
 
 SCRIPT_PATH = Path(__file__).parents[1] / "scripts" / "audit_dataset.py"
 SPECIFICATION = importlib.util.spec_from_file_location("audit_dataset", SCRIPT_PATH)
+if SPECIFICATION is None or SPECIFICATION.loader is None:
+    raise ImportError(f"Unable to load test module from {SCRIPT_PATH}")
 audit_dataset = importlib.util.module_from_spec(SPECIFICATION)
-assert SPECIFICATION.loader is not None
 sys.modules[SPECIFICATION.name] = audit_dataset
 SPECIFICATION.loader.exec_module(audit_dataset)
 

@@ -12,8 +12,9 @@ SCRIPTS_DIRECTORY = Path(__file__).parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIRECTORY))
 SCRIPT_PATH = SCRIPTS_DIRECTORY / "stream_inference.py"
 SPECIFICATION = importlib.util.spec_from_file_location("stream_inference", SCRIPT_PATH)
+if SPECIFICATION is None or SPECIFICATION.loader is None:
+    raise ImportError(f"Unable to load test module from {SCRIPT_PATH}")
 stream_inference = importlib.util.module_from_spec(SPECIFICATION)
-assert SPECIFICATION.loader is not None
 sys.modules[SPECIFICATION.name] = stream_inference
 SPECIFICATION.loader.exec_module(stream_inference)
 

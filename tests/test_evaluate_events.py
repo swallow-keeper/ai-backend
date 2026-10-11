@@ -8,8 +8,9 @@ SCRIPTS_DIRECTORY = Path(__file__).parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIRECTORY))
 SCRIPT_PATH = SCRIPTS_DIRECTORY / "evaluate_events.py"
 SPECIFICATION = importlib.util.spec_from_file_location("evaluate_events", SCRIPT_PATH)
+if SPECIFICATION is None or SPECIFICATION.loader is None:
+    raise ImportError(f"Unable to load test module from {SCRIPT_PATH}")
 evaluate_events = importlib.util.module_from_spec(SPECIFICATION)
-assert SPECIFICATION.loader is not None
 sys.modules[SPECIFICATION.name] = evaluate_events
 SPECIFICATION.loader.exec_module(evaluate_events)
 
