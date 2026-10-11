@@ -24,9 +24,18 @@ class PreprocessingMetadata(TypedDict):
     window_samples: int
 
 
+class DatasetSummaryConfig(TypedDict):
+    sample_rate_hz: int
+    window_samples: int
+
+
+class DatasetSummary(TypedDict):
+    config: DatasetSummaryConfig
+
+
 class DatasetMetadata(TypedDict):
     dataset_dir: str
-    summary: dict[str, object]
+    summary: DatasetSummary
     summary_sha256: str
     normalizer_sha256: str
     splits_sha256: str
@@ -53,11 +62,11 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def dataset_metadata(dataset_dir: Path) -> dict[str, object]:
+def dataset_metadata(dataset_dir: Path) -> DatasetMetadata:
     summary_path = dataset_dir / "summary.json"
     normalizer_path = dataset_dir / "normalizer.json"
     splits_path = dataset_dir / "splits.json"
-    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary = cast(DatasetSummary, json.loads(summary_path.read_text(encoding="utf-8")))
     return {
         "dataset_dir": str(dataset_dir),
         "summary": summary,
@@ -78,6 +87,7 @@ def save_checkpoint(
     run_kind: str,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    dataset = dataset_metadata(dataset_dir)
     torch.save(
         {
             "schema_version": CHECKPOINT_SCHEMA_VERSION,
@@ -88,10 +98,10 @@ def save_checkpoint(
             "preprocessing": {
                 "input_layout": "channels_first",
                 "padding_policy": "zero_after_train_normalization",
-                "sample_rate_hz": dataset_metadata(dataset_dir)["summary"]["config"]["sample_rate_hz"],
-                "window_samples": dataset_metadata(dataset_dir)["summary"]["config"]["window_samples"],
+                "sample_rate_hz": dataset["summary"]["config"]["sample_rate_hz"],
+                "window_samples": dataset["summary"]["config"]["window_samples"],
             },
-            "dataset": dataset_metadata(dataset_dir),
+            "dataset": dataset,
             "training_config": training_config,
             "validation_metrics": validation_metrics,
             "run_kind": run_kind,
