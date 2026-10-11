@@ -9,6 +9,7 @@ import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict
 
 import torch
 from torch import nn
@@ -40,6 +41,14 @@ class ComparisonConfig:
     models: tuple[str, ...]
 
 
+class ModelComparisonResult(TypedDict):
+    model_name: str
+    checkpoint: str
+    parameters: int
+    mean_batch_inference_milliseconds: float
+    validation_metrics: dict[str, float]
+
+
 class StatisticalFeatureClassifier(nn.Module):
     def __init__(self, input_channels: int = 4) -> None:
         super().__init__()
@@ -64,6 +73,7 @@ class SpectrogramCNN(nn.Module):
         super().__init__()
         self.n_fft = 256
         self.hop_length = 128
+        self.window: torch.Tensor
         self.register_buffer("window", torch.hann_window(self.n_fft))
         self.features = nn.Sequential(
             nn.Conv2d(input_channels, 16, kernel_size=3, padding=1),
@@ -255,7 +265,7 @@ def main() -> None:
     train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True)
     validation_loader = DataLoader(validation_dataset, batch_size=config.batch_size)
     arguments.output_dir.mkdir(parents=True, exist_ok=True)
-    model_results: list[dict[str, object]] = []
+    model_results: list[ModelComparisonResult] = []
 
     for model_index, model_name in enumerate(config.models):
         set_seed(config.seed + model_index)
