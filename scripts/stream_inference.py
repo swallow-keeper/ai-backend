@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+# Replay signal chunks through a baseline model and emit online swallow events.
+
+from __future__ import annotations
+
+import argparse
+import json
+import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+import numpy as np
+import torch
+from torch import nn
+
+from event_postprocessing import CausalEventPostprocessor, Event as StreamEvent, EventConfig
+from model_artifacts import load_checkpoint
+from train_baseline import choose_device
+
+
+@dataclass(frozen=True)
+class StreamingConfig:
+    sample_rate_hz: int
+    window_seconds: float
+    stride_seconds: float
+    chunk_samples: int
+
+    @property
+    def window_samples(self) -> int:
+        return round(self.window_seconds * self.sample_rate_hz)
+
+    @property
+    def stride_samples(self) -> int:
+        return round(self.stride_seconds * self.sample_rate_hz)
+
+class OnlineEventAssembler:
+    def __init__(self, score_threshold: float, merge_gap_samples: int) -> None:
+        self.score_threshold = score_threshold
+        self.merge_gap_samples = merge_gap_samples
+        self._active_start: int | None = None
+        self._active_end: int | None = None
+        self._score_sum = 0.0
+        self._score_count = 0
+
+    def add_score(
+        self,
+        start_sample: int,
+        end_sample: int,
+        score: float,
+        emitted_at_sample: int,
+    ) -> list[StreamEvent]:
+        emitted: list[StreamEvent] = []
+        if score >= self.score_threshold:
+            if self._active_start is None:
+                self._active_start = start_sample
+            self._active_end = max(self._active_end or end_sample, end_sample)
+            self._score_sum += score
+            self._score_count += 1
+            return emitted
+
+        if self._active_end is not None and start_sample - self._active_end > self.merge_gap_samples:
+            emitted.append(self._close_event(emitted_at_sample))
+        return emitted
+
+    def flush(self, emitted_at_sample: int) -> list[StreamEvent]:
+        if self._active_end is None:
+            return []
+        return [self._close_event(emitted_at_sample)]
+
+    def _close_event(self, emitted_at_sample: int) -> StreamEvent:
+        assert self._active_start is not None
+        assert self._active_end is not None
+        event = StreamEvent(
+            start_sample=self._active_start,
+            end_sample=self._active_end,
+            emitted_at_sample=emitted_at_sample,
+            mean_score=self._score_sum / self._score_count,
+        )
+        self._active_start = None
+        self._active_end = None
+        self._score_sum = 0.0
+        self._score_count = 0
+        return event
+
+
+class StreamingSwallowDetector:
+    def __init__(
+        self,
+        model: nn.Module,
+        mean: np.ndarray,
+        std: np.ndarray,
+        config: StreamingConfig,
+        event_config: EventConfig,
+        device: torch.device,
+    ) -> None:
+        self.model = model.to(device).eval()
+        self.mean = mean.astype(np.float32)
+        self.std = std.astype(np.float32)
+        self.config = config
+        self.device = device
+        self.processor = CausalEventPostprocessor(event_config, config.stride_samples)
+        self.buffer = np.empty((0, len(mean)), dtype=np.float32)
+        self.buffer_start = 0
+        self.received_samples = 0
+        self.next_window_start = 0
+        self.window_count = 0
+
+        if np.any(self.std == 0):
+            raise ValueError("The saved normalizer contains a zero standard deviation.")
+
+    def ingest(self, values: np.ndarray) -> list[StreamEvent]:
+        if values.ndim != 2 or values.shape[1] != len(self.mean):
+            raise ValueError(f"Expected chunk shape (samples, {len(self.mean)}), found {values.shape}.")
+        self.buffer = np.concatenate((self.buffer, values.astype(np.float32)), axis=0)
+        self.received_samples += values.shape[0]
+        emitted: list[StreamEvent] = []
+
+        while self.next_window_start + self.config.window_samples <= self.received_samples:
+            start_index = self.next_window_start - self.buffer_start
+            end_index = start_index + self.config.window_samples
+            window = self.buffer[start_index:end_index]
+            score = self._score_window(window)
+            emitted.extend(
+                self.processor.add_window_score(
+                    self.next_window_start,
+                    self.next_window_start + self.config.window_samples,
+                    score,
+                    self.received_samples,
+                )
+            )
+            self.next_window_start += self.config.stride_samples
+            self.window_count += 1
+
+        self._discard_consumed_prefix()
+        return emitted
+
+    def flush(self) -> list[StreamEvent]:
+        return self.processor.flush(self.received_samples)
+
+    @property
+    def status(self) -> str:
+        return "warming_up" if self.window_count == 0 else "monitoring"
+
+    def _score_window(self, window: np.ndarray) -> float:
+        normalized = (window - self.mean) / self.std
+        tensor = torch.from_numpy(normalized.T.copy()).unsqueeze(0).to(self.device)
+        with torch.no_grad():
+            return float(torch.sigmoid(self.model(tensor)).item())
+
+    def _discard_consumed_prefix(self) -> None:
+        discard_samples = self.next_window_start - self.buffer_start
+        if discard_samples <= 0:
+            return
+        self.buffer = self.buffer[discard_samples:]
+        self.buffer_start = self.next_window_start
+
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Replay a signal as streaming input to the baseline detector.")
+    parser.add_argument("--signal", type=Path, required=True)
+    parser.add_argument("--checkpoint", type=Path, default=Path("runs/baseline/best_model.pt"))
+    parser.add_argument("--config", type=Path, default=Path("configs/streaming_inference.json"))
+    parser.add_argument("--event-config", type=Path, default=Path("configs/event_evaluation.json"))
+    parser.add_argument("--output-dir", type=Path, default=Path("runs/streaming"))
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
+    return parser.parse_args()
+
+
+def load_config(path: Path) -> StreamingConfig:
+    config = StreamingConfig(**json.loads(path.read_text(encoding="utf-8")))
+    if config.window_samples <= 0 or config.stride_samples <= 0 or config.chunk_samples <= 0:
+        raise ValueError("Window, stride, and chunk sizes must be positive.")
+    return config
+
+
+def event_payload(event: StreamEvent, sample_rate_hz: int) -> dict[str, float | int]:
+    return {
+        **asdict(event),
+        "start_seconds": event.start_sample / sample_rate_hz,
+        "end_seconds": event.end_sample / sample_rate_hz,
+        "emitted_at_seconds": event.emitted_at_sample / sample_rate_hz,
+        "algorithmic_latency_seconds": (event.emitted_at_sample - event.end_sample) / sample_rate_hz,
+    }
+
+
+def main() -> None:
+    arguments = parse_arguments()
+    config = load_config(arguments.config)
+    event_values = json.loads(arguments.event_config.read_text(encoding="utf-8"))
+    event_config = EventConfig(
+        event_values["score_threshold"],
+        round(event_values["minimum_event_seconds"] * config.sample_rate_hz),
+        round(event_values["merge_gap_seconds"] * config.sample_rate_hz),
+    )
+    device = choose_device(arguments.device)
+    model, checkpoint = load_checkpoint(arguments.checkpoint, device)
+    normalizer = checkpoint["normalizer"]
+    checkpoint_window_samples = checkpoint["preprocessing"]["window_samples"]
+    if checkpoint_window_samples != config.window_samples:
+        raise ValueError("Streaming window length does not match checkpoint preprocessing.")
+    signal = np.load(arguments.signal, mmap_mode="r")
+    detector = StreamingSwallowDetector(
+        model,
+        np.asarray(normalizer["mean"]),
+        np.asarray(normalizer["std"]),
+        config,
+        event_config,
+        device,
+    )
+    events: list[StreamEvent] = []
+    inference_start = time.perf_counter()
+    for start in range(0, signal.shape[0], config.chunk_samples):
+        events.extend(detector.ingest(signal[start : start + config.chunk_samples]))
+    events.extend(detector.flush())
+    elapsed_seconds = time.perf_counter() - inference_start
+    output = {
+        "signal": str(arguments.signal),
+        "device": str(device),
+        "signal_samples": int(signal.shape[0]),
+        "chunk_samples": config.chunk_samples,
+        "window_count": detector.window_count,
+        "status": detector.status,
+        "wall_inference_seconds": elapsed_seconds,
+        "wall_seconds_per_window": elapsed_seconds / detector.window_count if detector.window_count else 0.0,
+        "events": [event_payload(event, config.sample_rate_hz) for event in events],
+    }
+    arguments.output_dir.mkdir(parents=True, exist_ok=True)
+    (arguments.output_dir / "replay_report.json").write_text(
+        json.dumps(output, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(json.dumps({key: output[key] for key in ("window_count", "wall_inference_seconds", "events")}))
+
+
+if __name__ == "__main__":
+    main()
