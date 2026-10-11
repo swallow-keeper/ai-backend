@@ -13,7 +13,8 @@ import numpy as np
 import torch
 from torch import nn
 
-from train_baseline import ModelConfig, SwallowCNN, choose_device
+from model_artifacts import load_checkpoint
+from train_baseline import choose_device
 
 
 @dataclass(frozen=True)
@@ -169,7 +170,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--checkpoint", type=Path, default=Path("runs/baseline/best_model.pt"))
     parser.add_argument("--config", type=Path, default=Path("configs/streaming_inference.json"))
     parser.add_argument("--output-dir", type=Path, default=Path("runs/streaming"))
-    parser.add_argument("--device", choices=("auto", "cpu", "mps"), default="auto")
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     return parser.parse_args()
 
 
@@ -180,20 +181,6 @@ def load_config(path: Path) -> StreamingConfig:
     if not 0 <= config.score_threshold <= 1:
         raise ValueError("score_threshold must be in [0, 1].")
     return config
-
-
-def load_baseline_model(checkpoint_path: Path, device: torch.device) -> tuple[SwallowCNN, dict[str, object]]:
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    if "model_config" not in checkpoint:
-        raise ValueError("Checkpoint is not a Phase 3 baseline checkpoint.")
-    model_config = ModelConfig(
-        input_channels=checkpoint["model_config"]["input_channels"],
-        channels=tuple(checkpoint["model_config"]["channels"]),
-        dropout=checkpoint["model_config"]["dropout"],
-    )
-    model = SwallowCNN(model_config)
-    model.load_state_dict(checkpoint["model_state_dict"])
-    return model.to(device), checkpoint["normalizer"]
 
 
 def event_payload(event: StreamEvent, sample_rate_hz: int) -> dict[str, float | int]:
@@ -210,7 +197,11 @@ def main() -> None:
     arguments = parse_arguments()
     config = load_config(arguments.config)
     device = choose_device(arguments.device)
-    model, normalizer = load_baseline_model(arguments.checkpoint, device)
+    model, checkpoint = load_checkpoint(arguments.checkpoint, device)
+    normalizer = checkpoint["normalizer"]
+    checkpoint_window_samples = checkpoint["preprocessing"]["window_samples"]
+    if checkpoint_window_samples != config.window_samples:
+        raise ValueError("Streaming window length does not match checkpoint preprocessing.")
     signal = np.load(arguments.signal, mmap_mode="r")
     detector = StreamingSwallowDetector(
         model,

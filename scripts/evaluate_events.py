@@ -15,7 +15,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from audit_dataset import frame_to_sample, read_label_rows
-from train_baseline import ModelConfig, SwallowCNN, SwallowWindowDataset, choose_device
+from model_artifacts import file_sha256, load_checkpoint
+from train_baseline import SwallowWindowDataset, choose_device
 
 
 @dataclass(frozen=True)
@@ -29,16 +30,18 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate swallow events on the held-out test split.")
     parser.add_argument("--raw-dir", type=Path, default=Path("data/raw"))
     parser.add_argument("--dataset-dir", type=Path, default=Path("data/processed/dataset"))
-    parser.add_argument("--checkpoint", type=Path, default=Path("runs/baseline/best_model.pt"))
+    parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--config", type=Path, default=Path("configs/event_evaluation.json"))
     parser.add_argument("--output-dir", type=Path, default=Path("runs/evaluation"))
-    parser.add_argument("--device", choices=("auto", "cpu", "mps"), default="auto")
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
+    parser.add_argument("--split", choices=("validation", "test"), required=True)
+    parser.add_argument("--max-files", type=int)
     return parser.parse_args()
 
 
-def load_rows(dataset_dir: Path) -> list[dict[str, str]]:
+def load_rows(dataset_dir: Path, split: str) -> list[dict[str, str]]:
     with (dataset_dir / "windows.csv").open(newline="", encoding="utf-8") as input_file:
-        return [row for row in csv.DictReader(input_file) if row["split"] == "test"]
+        return [row for row in csv.DictReader(input_file) if row["split"] == split]
 
 
 def interval_iou(left: Event, right: Event) -> float:
@@ -197,7 +200,7 @@ def load_targets(
 
 
 def predict_window_scores(
-    model: SwallowCNN,
+    model: torch.nn.Module,
     rows: list[dict[str, str]],
     raw_dir: Path,
     normalizer: dict[str, object],
@@ -226,17 +229,14 @@ def main() -> None:
     evaluation_config = json.loads(arguments.config.read_text(encoding="utf-8"))
     dataset_summary = json.loads((arguments.dataset_dir / "summary.json").read_text(encoding="utf-8"))
     normalizer = json.loads((arguments.dataset_dir / "normalizer.json").read_text(encoding="utf-8"))
-    checkpoint = torch.load(arguments.checkpoint, map_location="cpu", weights_only=False)
-    model_config = ModelConfig(
-        input_channels=checkpoint["model_config"]["input_channels"],
-        channels=tuple(checkpoint["model_config"]["channels"]),
-        dropout=checkpoint["model_config"]["dropout"],
-    )
-    model = SwallowCNN(model_config)
-    model.load_state_dict(checkpoint["model_state_dict"])
     device = choose_device(arguments.device)
-    model.to(device)
-    rows = load_rows(arguments.dataset_dir)
+    model, checkpoint = load_checkpoint(arguments.checkpoint, device)
+    rows = load_rows(arguments.dataset_dir, arguments.split)
+    if arguments.max_files is not None:
+        allowed_files = set(sorted({row["file_name"] for row in rows})[: arguments.max_files])
+        rows = [row for row in rows if row["file_name"] in allowed_files]
+    if checkpoint["dataset"]["splits_sha256"] != file_sha256(arguments.dataset_dir / "splits.json"):
+        raise ValueError("Checkpoint and dataset split manifests do not match.")
     sample_rate_hz = int(dataset_summary["config"]["sample_rate_hz"])
     frame_rate_hz = int(dataset_summary["config"]["vfss_frame_rate_hz"])
     window_samples = int(dataset_summary["config"]["window_samples"])
@@ -273,6 +273,8 @@ def main() -> None:
     )
     output = {
         "evaluation_config": evaluation_config,
+        "split": arguments.split,
+        "checkpoint_run_kind": checkpoint["run_kind"],
         "metrics": metrics,
         "predictions_by_file": {
             file_name: [event.__dict__ for event in events]

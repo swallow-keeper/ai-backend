@@ -14,6 +14,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
+from model_artifacts import save_checkpoint
 from train_baseline import (
     ModelConfig,
     SwallowCNN,
@@ -109,7 +110,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int)
     parser.add_argument("--max-train-samples", type=int)
     parser.add_argument("--max-validation-samples", type=int)
-    parser.add_argument("--device", choices=("auto", "cpu", "mps"), default="auto")
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     return parser.parse_args()
 
 
@@ -140,6 +141,8 @@ def parameter_count(model: nn.Module) -> int:
 
 
 def synchronize(device: torch.device) -> None:
+    if device.type == "cuda":
+        torch.cuda.synchronize()
     if device.type == "mps":
         torch.mps.synchronize()
 
@@ -267,14 +270,21 @@ def main() -> None:
             device,
         )
         checkpoint_path = arguments.output_dir / f"{model_name}.pt"
-        torch.save(
-            {
-                "model_name": model_name,
-                "model_state_dict": trained_model.state_dict(),
-                "normalizer": normalizer,
-                "validation_metrics": metrics,
-            },
+        save_checkpoint(
             checkpoint_path,
+            model_name,
+            trained_model,
+            normalizer,
+            arguments.dataset_dir,
+            {
+                "batch_size": config.batch_size,
+                "epochs": config.epochs,
+                "learning_rate": config.learning_rate,
+                "weight_decay": config.weight_decay,
+                "seed": config.seed,
+            },
+            metrics,
+            "smoke" if config.epochs == 1 else "full_comparison",
         )
         (arguments.output_dir / f"{model_name}_history.json").write_text(
             json.dumps(history, indent=2) + "\n",

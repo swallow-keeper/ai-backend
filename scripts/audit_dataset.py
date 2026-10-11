@@ -312,10 +312,17 @@ def plot_signal_with_intervals(
     signal = np.load(signal_path, mmap_mode="r")
     label_rows = read_label_rows(label_path)
     time_seconds = np.arange(signal.shape[0]) / sample_rate_hz
-    figure, axes = plt.subplots(signal.shape[1], 1, figsize=(14, 8), sharex=True)
     channel_names = ("microphone", "accelerometer_ap", "accelerometer_si", "accelerometer_ml")
+    figure, axes = plt.subplots(
+        len(channel_names),
+        1,
+        figsize=(14, 8),
+        sharex=True,
+        squeeze=False,
+    )
+    channel_axes = axes[:, 0]
 
-    for channel_index, axis in enumerate(axes):
+    for channel_index, axis in enumerate(channel_axes):
         axis.plot(time_seconds, signal[:, channel_index], linewidth=0.5)
         axis.set_ylabel(channel_names[channel_index])
         for row in label_rows:
@@ -328,7 +335,7 @@ def plot_signal_with_intervals(
                 color="tab:green",
             )
 
-    axes[-1].set_xlabel("Time (seconds)")
+    channel_axes[-1].set_xlabel("Time (seconds)")
     figure.suptitle(f"{signal_path.stem}: green spans are converted swallow labels")
     figure.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)

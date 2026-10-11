@@ -15,6 +15,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
+from model_artifacts import save_checkpoint
 
 @dataclass(frozen=True)
 class ModelConfig:
@@ -118,7 +119,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int)
     parser.add_argument("--max-train-samples", type=int)
     parser.add_argument("--max-validation-samples", type=int)
-    parser.add_argument("--device", choices=("auto", "cpu", "mps"), default="auto")
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     return parser.parse_args()
 
 
@@ -132,10 +133,16 @@ def load_training_config(path: Path) -> TrainingConfig:
 def choose_device(requested_device: str) -> torch.device:
     if requested_device == "cpu":
         return torch.device("cpu")
+    if requested_device == "cuda":
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA was requested but is unavailable.")
+        return torch.device("cuda")
     if requested_device == "mps":
         if not torch.backends.mps.is_available():
             raise RuntimeError("MPS was requested but is unavailable.")
         return torch.device("mps")
+    if torch.cuda.is_available():
+        return torch.device("cuda")
     if torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
@@ -211,27 +218,28 @@ def write_checkpoint(
     normalizer: dict[str, object],
     training_config: TrainingConfig,
     validation_metrics: dict[str, float],
+    dataset_dir: Path,
 ) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    torch.save(
+    save_checkpoint(
+        output_dir / "best_model.pt",
+        "one_dimensional_cnn",
+        model,
+        normalizer,
+        dataset_dir,
         {
-            "model_state_dict": model.state_dict(),
+            "batch_size": training_config.batch_size,
+            "epochs": training_config.epochs,
+            "learning_rate": training_config.learning_rate,
+            "weight_decay": training_config.weight_decay,
+            "seed": training_config.seed,
             "model_config": {
                 "input_channels": model_config.input_channels,
                 "channels": list(model_config.channels),
                 "dropout": model_config.dropout,
             },
-            "normalizer": normalizer,
-            "training_config": {
-                "batch_size": training_config.batch_size,
-                "epochs": training_config.epochs,
-                "learning_rate": training_config.learning_rate,
-                "weight_decay": training_config.weight_decay,
-                "seed": training_config.seed,
-            },
-            "validation_metrics": validation_metrics,
         },
-        output_dir / "best_model.pt",
+        validation_metrics,
+        "smoke" if training_config.epochs == 1 else "full_training",
     )
 
 
@@ -315,6 +323,7 @@ def main() -> None:
                 normalizer,
                 config,
                 validation_metrics,
+                arguments.dataset_dir,
             )
 
     (arguments.output_dir / "history.json").write_text(
