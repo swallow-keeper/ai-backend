@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TypedDict
+from typing import TypeAlias, TypedDict, cast
 
 import torch
 from torch import nn
@@ -13,12 +13,28 @@ from torch import nn
 MODEL_NAMES = ("statistical_features", "one_dimensional_cnn", "spectrogram_cnn")
 
 
-class ModelSpec(TypedDict, total=False):
+class BaseModelSpec(TypedDict):
     input_channels: int
+
+
+class OneDimensionalCNNModelSpec(BaseModelSpec):
     channels: list[int]
+    dropout: float
+
+
+class StatisticalFeaturesModelSpec(BaseModelSpec):
+    pass
+
+
+class SpectrogramCNNModelSpec(BaseModelSpec):
     dropout: float
     n_fft: int
     hop_length: int
+
+
+ModelSpec: TypeAlias = (
+    OneDimensionalCNNModelSpec | StatisticalFeaturesModelSpec | SpectrogramCNNModelSpec
+)
 
 
 @dataclass(frozen=True)
@@ -132,18 +148,21 @@ def model_spec(model_name: str) -> ModelSpec:
 def create_model(model_name: str, spec: ModelSpec | None = None) -> nn.Module:
     spec = spec or model_spec(model_name)
     if model_name == "one_dimensional_cnn":
+        cnn_spec = cast(OneDimensionalCNNModelSpec, spec)
         return SwallowCNN(
             ModelConfig(
-                input_channels=int(spec["input_channels"]),
-                channels=tuple(spec["channels"]),
-                dropout=float(spec["dropout"]),
+                input_channels=cnn_spec["input_channels"],
+                channels=tuple(cnn_spec["channels"]),
+                dropout=cnn_spec["dropout"],
             )
         )
     if model_name == "statistical_features":
-        return StatisticalFeatureClassifier(input_channels=int(spec["input_channels"]))
+        feature_spec = cast(StatisticalFeaturesModelSpec, spec)
+        return StatisticalFeatureClassifier(input_channels=feature_spec["input_channels"])
     if model_name == "spectrogram_cnn":
+        spectrogram_spec = cast(SpectrogramCNNModelSpec, spec)
         return SpectrogramCNN(
-            input_channels=int(spec["input_channels"]),
-            dropout=float(spec["dropout"]),
+            input_channels=spectrogram_spec["input_channels"],
+            dropout=spectrogram_spec["dropout"],
         )
     raise ValueError(f"Unknown model name: {model_name}")
