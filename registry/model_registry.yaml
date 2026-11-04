@@ -1,0 +1,31 @@
+version: "0.1.0"
+embedding:
+  # 가중치 미동봉 기본값, EfficientAT 설치 시 backend를 efficientat으로 변경
+  backend: mel_pool
+  efficientat_model: mn40_as
+  pretrained: true
+  wavlm_model: microsoft/wavlm-base-plus
+score:
+  # mel_pool 거리 기준 가설값, 건강인 수집 후 조정, 임상 임계값 아님
+  tau1: 1.0
+  tau2: 3.0
+  k_consecutive: 2
+  ewma_alpha: 0.5
+  population_sigma: 0.04
+baseline:
+  min_passed: 2
+  max_spread: 0.12
+  profile_min_samples: 5
+voice:
+  timeout_seconds: 10
+  max_attempts: 3
+  merge_window_seconds: 1.5
+quality:
+  min_voiced_seconds: 0.5
+  min_rms: 0.02
+  max_clipping_ratio: 0.01
+  min_snr_db: 6.0
+  min_voiced_ratio: 0.55
+  max_f0_cv: 0.25
+  max_level_delta_db: 12.0
+  max_noise_floor_delta_db: 10.0
