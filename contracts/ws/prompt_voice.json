@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://swallow-guardian.local/ws/prompt_voice.json",
+  "title": "PROMPT_VOICE",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "session_id", "event_id", "timeout_seconds", "attempt"],
+  "properties": {
+    "type": { "const": "PROMPT_VOICE" },
+    "session_id": { "type": "string" },
+    "event_id": { "type": "string" },
+    "timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
+    "attempt": { "type": "integer", "minimum": 1 }
+  }
+}

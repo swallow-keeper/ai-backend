@@ -1,0 +1,511 @@
+openapi: 3.1.0
+info:
+  title: 삼킴지킴이 API
+  version: 0.1.0
+  description: >
+    비임상 연구용 프로토타입. 흡인을 진단하지 않습니다.
+    결과는 개인 기준 대비 음성 변화이며, 임상 성능이 아닙니다.
+    영상 업로드 경로는 없습니다.
+servers:
+  - url: http://localhost:8000
+security:
+  - bearerAuth: []
+tags:
+  - name: sessions
+  - name: events
+  - name: me
+  - name: later
+paths:
+  /sessions:
+    post:
+      tags: [sessions]
+      operationId: startSession
+      summary: 식사 세션 시작
+      responses:
+        "201":
+          description: 생성된 세션
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    get:
+      tags: [later]
+      operationId: listSessions
+      summary: 최근 식사 목록, 1차 미구현
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /sessions/{session_id}/end:
+    post:
+      tags: [sessions]
+      operationId: endSession
+      summary: 식사 세션 종료
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "200":
+          description: 종료된 세션
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /sessions/{session_id}/baseline:
+    post:
+      tags: [sessions]
+      operationId: registerBaseline
+      summary: 기준 음성 3개 등록
+      description: PCM16 WAV 3개. 통과 클립 임베딩의 중앙값과 산포를 저장하고 원본은 폐기합니다.
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [clip_1, clip_2, clip_3]
+              properties:
+                clip_1:
+                  type: string
+                  format: binary
+                clip_2:
+                  type: string
+                  format: binary
+                clip_3:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: 기준 등록 결과. stable이 false면 저장하지 않고 재녹음이 필요합니다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BaselineResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+  /sessions/{session_id}/swallow-events:
+    post:
+      tags: [sessions]
+      operationId: reportSwallowEvent
+      summary: 삼킴 후보 보고
+      description: 자동, 수동, 주기 트리거를 같은 형식으로 받습니다. 영상 바이트는 받지 않습니다.
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SwallowEventIn"
+      responses:
+        "201":
+          description: 접수된 이벤트. merged가 true면 새 발성 요청을 만들지 않습니다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SwallowEventOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /events/{event_id}/voice-clip:
+    post:
+      tags: [events]
+      operationId: submitVoiceClip
+      summary: 삼킴 후 2초 발성 업로드와 분석
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [clip]
+              properties:
+                clip:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: 분석 결과. 원본 음성은 응답 전에 폐기됩니다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+  /events/{event_id}/skip:
+    post:
+      tags: [events]
+      operationId: skipVoice
+      summary: 발성 건너뜀
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      responses:
+        "200":
+          description: 건너뜀 기록
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /events/{event_id}/resolve:
+    post:
+      tags: [events]
+      operationId: resolveIntervention
+      summary: 처치 완료
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      responses:
+        "200":
+          description: 알림부터 처치 완료까지의 지속시간
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Intervention"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /me/consents:
+    post:
+      tags: [me]
+      operationId: recordConsent
+      summary: 동의 기록
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConsentIn"
+      responses:
+        "201":
+          description: 저장된 동의
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Consent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /me/data:
+    delete:
+      tags: [me]
+      operationId: deleteMyData
+      summary: 내 데이터 삭제
+      description: 동의 철회를 포함해 해당 사용자의 세션, 임베딩, 점수를 삭제합니다.
+      responses:
+        "200":
+          description: 삭제 완료
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deleted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /home/summary:
+    get:
+      tags: [later]
+      operationId: homeSummary
+      summary: 홈 요약, 1차 미구현
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /sessions/{session_id}/report:
+    get:
+      tags: [later]
+      operationId: sessionReport
+      summary: 식사 보고서, 1차 미구현
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+  /reports/trend:
+    get:
+      tags: [later]
+      operationId: trendReport
+      summary: 일·주·월 추이, 1차 미구현
+      responses:
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+    EventId:
+      name: event_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    Unauthorized:
+      description: 인증 실패
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+    Forbidden:
+      description: 동의 없음 또는 권한 없음
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+    NotFound:
+      description: 대상 없음
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+    Conflict:
+      description: 현재 단계에서 허용되지 않는 요청
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+    TooLarge:
+      description: 업로드 크기 또는 길이 초과
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+    NotImplemented:
+      description: 2차 범위
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorBody"
+  schemas:
+    ErrorBody:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+    Phase:
+      type: string
+      enum:
+        - TRACKING
+        - CANDIDATE
+        - AWAITING_VOICE
+        - ANALYZING
+        - RESULT
+        - RECHECK
+        - ALERT
+        - AWAITING_RESOLVE
+    ResultState:
+      type: string
+      enum:
+        - no_change
+        - recheck
+        - caution
+        - unanalyzable
+        - skipped
+        - no_response
+    Trigger:
+      type: string
+      enum: [auto, manual, periodic]
+    Session:
+      type: object
+      required: [id, phase, started_at]
+      properties:
+        id:
+          type: string
+        phase:
+          $ref: "#/components/schemas/Phase"
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+    BaselineResult:
+      type: object
+      required: [stable, passed_count, spread, reason_codes, warnings, model_version, quality_flag]
+      properties:
+        stable:
+          type: boolean
+        passed_count:
+          type: integer
+        spread:
+          type: number
+        reason_codes:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        model_version:
+          type: string
+        quality_flag:
+          type: string
+    SwallowEventIn:
+      type: object
+      required: [trigger]
+      properties:
+        trigger:
+          $ref: "#/components/schemas/Trigger"
+        detected_at:
+          type: string
+          format: date-time
+        camera_confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
+    SwallowEventOut:
+      type: object
+      required: [id, session_id, trigger, phase, prompt, merged]
+      properties:
+        id:
+          type: string
+        session_id:
+          type: string
+        trigger:
+          $ref: "#/components/schemas/Trigger"
+        camera_confidence:
+          type: number
+          nullable: true
+        phase:
+          $ref: "#/components/schemas/Phase"
+        prompt:
+          type: boolean
+        merged:
+          type: boolean
+    AnalysisResult:
+      type: object
+      required: [event_id, state, phase, reason_codes, warnings, model_version]
+      properties:
+        event_id:
+          type: string
+        clip_id:
+          type: string
+          nullable: true
+        state:
+          $ref: "#/components/schemas/ResultState"
+        phase:
+          $ref: "#/components/schemas/Phase"
+        change_score:
+          type: number
+          nullable: true
+        ewma_score:
+          type: number
+          nullable: true
+        reason_codes:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+        model_version:
+          type: string
+        tau1:
+          type: number
+          nullable: true
+        tau2:
+          type: number
+          nullable: true
+        message_key:
+          type: string
+    Intervention:
+      type: object
+      required: [event_id, alerted_at, resolved_at, duration_seconds, phase]
+      properties:
+        event_id:
+          type: string
+        alerted_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+        duration_seconds:
+          type: number
+        phase:
+          $ref: "#/components/schemas/Phase"
+    ConsentIn:
+      type: object
+      required: [item, granted]
+      properties:
+        item:
+          type: string
+          enum: [voice_analysis, research_optional]
+        granted:
+          type: boolean
+        guardian:
+          type: boolean
+          default: false
+    Consent:
+      type: object
+      required: [id, item, granted, guardian, recorded_at]
+      properties:
+        id:
+          type: string
+        item:
+          type: string
+        granted:
+          type: boolean
+        guardian:
+          type: boolean
+        recorded_at:
+          type: string
+          format: date-time
+    Deleted:
+      type: object
+      required: [deleted]
+      properties:
+        deleted:
+          type: boolean

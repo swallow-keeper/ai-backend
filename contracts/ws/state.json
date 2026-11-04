@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://swallow-guardian.local/ws/state.json",
+  "title": "STATE",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "session_id", "phase"],
+  "properties": {
+    "type": { "const": "STATE" },
+    "session_id": { "type": "string" },
+    "phase": {
+      "enum": ["TRACKING", "CANDIDATE", "AWAITING_VOICE", "ANALYZING", "RESULT", "RECHECK", "ALERT", "AWAITING_RESOLVE"]
+    }
+  }
+}
