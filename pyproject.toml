@@ -27,4 +27,5 @@ swallow-tools = { workspace = true }
 
 [tool.pytest.ini_options]
 testpaths = ["shared/tests", "server/tests"]
+pythonpath = ["server/tests"]
 addopts = "-q"

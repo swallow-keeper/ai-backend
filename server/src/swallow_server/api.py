@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request, UploadFile
+from fastapi import APIRouter, Depends, Header, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,7 @@ from swallow_server.schemas import (
     SwallowEventIn,
     SwallowEventOut,
 )
+from swallow_server import realtime
 from swallow_server.services import analysis, sessions
 from swallow_server.tables import User
 
@@ -110,7 +111,7 @@ async def register_baseline(
 
 
 @router.post("/sessions/{session_id}/swallow-events", response_model=SwallowEventOut, status_code=201)
-def report_swallow(
+async def report_swallow(
     session_id: str,
     payload: SwallowEventIn,
     request: Request,
@@ -118,7 +119,16 @@ def report_swallow(
     db: Session = Depends(get_db),
 ) -> SwallowEventOut:
     meal = sessions.owned_session(db, user, session_id)
-    return sessions.report_swallow(db, meal, payload, request.app.state.registry, utcnow())
+    result = sessions.report_swallow(db, meal, payload, request.app.state.registry, utcnow())
+    if result.prompt:
+        timeout = request.app.state.registry.voice_timeout_seconds
+        await request.app.state.hub.send(
+            meal.id,
+            realtime.prompt_message(meal.id, result.id, timeout, 1),
+        )
+        await request.app.state.hub.send(meal.id, realtime.state_message(meal.id, result.phase))
+        realtime.schedule_expiry(request.app, meal.id, result.id, timeout)
+    return result
 
 
 @router.post("/events/{event_id}/voice-clip", response_model=AnalysisOut)
@@ -136,11 +146,12 @@ async def submit_voice(
     now = utcnow()
     expired = sessions.expire_if_needed(db, meal, request.app.state.registry, now)
     if expired is not None:
+        await _publish(request, meal.id, expired, 1)
         return expired
     event = sessions.open_voice_event(db, meal, event.id)
     blob = await _read_clip(clip)
     try:
-        return analysis.score_clip(
+        result = analysis.score_clip(
             db,
             meal,
             event,
@@ -153,10 +164,14 @@ async def submit_voice(
         )
     finally:
         del blob
+    await _publish(request, meal.id, result, event.attempt_count + 1)
+    if result.state in {"recheck", "unanalyzable"} and result.phase in {"RECHECK", "AWAITING_VOICE"}:
+        realtime.schedule_expiry(request.app, meal.id, event.id, request.app.state.registry.voice_timeout_seconds)
+    return result
 
 
 @router.post("/events/{event_id}/skip", response_model=AnalysisOut)
-def skip_voice(
+async def skip_voice(
     event_id: str,
     request: Request,
     user: User = Depends(current_user),
@@ -166,21 +181,27 @@ def skip_voice(
     now = utcnow()
     expired = sessions.expire_if_needed(db, meal, request.app.state.registry, now)
     if expired is not None:
+        await _publish(request, meal.id, expired, 1)
         return expired
     event = sessions.open_voice_event(db, meal, event.id)
-    return sessions.skip_event(db, meal, event, request.app.state.registry, now)
+    result = sessions.skip_event(db, meal, event, request.app.state.registry, now)
+    await _publish(request, meal.id, result, event.attempt_count + 1)
+    return result
 
 
 @router.post("/events/{event_id}/resolve", response_model=InterventionOut)
-def resolve_event(
+async def resolve_event(
     event_id: str,
+    request: Request,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> InterventionOut:
     meal, event = sessions.owned_event(db, user, event_id)
     if meal.last_event_id != event.id:
         raise ApiError(409, "WRONG_PHASE", "처치 완료를 받을 단계가 아님")
-    return sessions.resolve_event(db, meal, event, utcnow())
+    result = sessions.resolve_event(db, meal, event, utcnow())
+    await request.app.state.hub.send(meal.id, realtime.state_message(meal.id, result.phase))
+    return result
 
 
 @router.post("/me/consents", response_model=ConsentOut, status_code=201)
@@ -219,6 +240,49 @@ def session_report(session_id: str) -> None:
 @router.get("/reports/trend")
 def trend_report() -> None:
     _not_implemented()
+
+
+async def _publish(request: Request, session_id: str, result: AnalysisOut, attempt: int) -> None:
+    await realtime.publish_result(
+        request.app.state.hub,
+        session_id,
+        result,
+        timeout_seconds=request.app.state.registry.voice_timeout_seconds,
+        attempt=attempt,
+    )
+
+
+@router.websocket("/ws/sessions/{session_id}")
+async def session_socket(
+    websocket: WebSocket,
+    session_id: str,
+    token: Annotated[str | None, Query()] = None,
+) -> None:
+    header = websocket.headers.get("authorization")
+    supplied = token
+    if header and header.startswith("Bearer "):
+        supplied = header.removeprefix("Bearer ").strip()
+    db = websocket.app.state.session_factory()
+    try:
+        user = db.query(User).filter_by(api_token=supplied).one_or_none() if supplied else None
+        meal = sessions.owned_session(db, user, session_id) if user is not None else None
+    except ApiError:
+        meal = None
+    finally:
+        db.close()
+    if meal is None:
+        await websocket.close(code=1008)
+        return
+    hub = websocket.app.state.hub
+    await hub.connect(session_id, websocket)
+    await websocket.send_json(
+        realtime.resync_message(session_id, meal.phase, meal.last_event_id, meal.open_event_id)
+    )
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        hub.disconnect(session_id, websocket)
 
 
 def error_body(status: int, code: str, message: str) -> JSONResponse:

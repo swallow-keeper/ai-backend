@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ from swallow_server.clock import utcnow
 from swallow_server.crypto import fernet_from_secret
 from swallow_server.db import create_schema, make_engine, make_session_factory
 from swallow_server.errors import ApiError
+from swallow_server.realtime import Hub
 from swallow_server.settings import Settings
 from swallow_server.tables import User
 
@@ -32,6 +34,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             db.close()
         yield
+        tasks = list(_app.state.tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     app = FastAPI(title="삼킴지킴이", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
@@ -40,6 +47,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.fernet = fernet_from_secret(settings.data_key)
     app.state.engine = engine
     app.state.session_factory = factory
+    app.state.hub = Hub()
+    app.state.tasks = set()
     app.include_router(router)
     app.add_exception_handler(ApiError, _api_error)
     app.add_exception_handler(RequestValidationError, _validation_error)
