@@ -5,6 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "swallow-shared",
     "alembic>=1.14",
+    "cryptography>=43",
     "fastapi>=0.115",
     "pydantic-settings>=2.6",
     "python-multipart>=0.0.12",

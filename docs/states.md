@@ -65,5 +65,6 @@
 기타:
 
 - `CONSENT_REQUIRED`: 음성 분석 동의가 없음
+- `BASELINE_REQUIRED`: 기준 음성 없이 발성을 분석하려 함
 - `WRONG_PHASE`: 현재 단계에서 허용되지 않음
 - `NOT_IMPLEMENTED`: 2차 기능
