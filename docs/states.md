@@ -50,6 +50,7 @@
 - `NOT_SUSTAINED_VOWEL`: 말하기, 기침, 헛기침, 발성 실패로 판단
 - `DECODE_FAILED`: WAV로 읽지 못함
 - `TOO_LONG`: 디코드 길이가 상한을 넘음
+- `TOO_LARGE`: 파일 크기가 상한을 넘음
 
 분석은 하되 기준을 다시 받으라고 알리는 코드:
 
