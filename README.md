@@ -20,4 +20,28 @@ registry/   모델 버전, 임계값
 
 학습과 서버는 `swallow_shared`만 사용해 전처리를 맞춥니다.
 
-성능 표기가 필요하면 "개발 내부 검증, 임상 성능 아님"을 붙입니다.
+성능 표기가 필요하면 "개발 내부 검증, 임상 성능 아님"을 붙입니다. 변화 점수는 흡인 확률이 아니고, 분류 head는 임상 라벨이 생기기 전까지 꺼져 있습니다. `registry/model_registry.yaml`의 임계값은 가설값입니다.
+
+## 실행
+
+```bash
+uv sync
+uv run uvicorn swallow_server.main:app --host 127.0.0.1 --port 8000
+```
+
+기본 토큰은 `dev-token`입니다. 식사 세션의 기준 음성과 삼킴 후 발성을 분석하려면 먼저 `POST /me/consents`로 `voice_analysis` 동의를 남깁니다.
+
+프론트 계약은 `contracts/openapi.yaml`과 `contracts/ws`입니다. 녹음 형식은 `docs/recording.md`, 결과 문구 초안과 사유 코드는 `docs/states.md`입니다. 영상은 올리지 않습니다. 서버 영상 폴백은 구현하지 않았고, 조건만 `docs/g0-fallback.md`에 적혀 있습니다.
+
+```bash
+uv run swallow-mock
+uv run swallow-replay --base-url http://127.0.0.1:8000
+```
+
+`swallow-mock`은 8001 포트에서 고정 응답만 돌려줍니다. 토큰은 `mock-token`입니다. 분석 결과가 아닙니다. `swallow-replay`는 떠 있는 분석 서버에 합성 발성을 넣어 변화 없음, 재확인, 주의, 분석 불가를 확인합니다. 이 확인은 개발 내부 검증이며 임상 성능이 아닙니다.
+
+스키마를 바꿀 때는 `server`에서 Alembic을 사용합니다.
+
+```bash
+uv run alembic -c server/alembic.ini upgrade head
+```
