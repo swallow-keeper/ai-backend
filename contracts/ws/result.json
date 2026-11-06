@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://swallow-guardian.local/ws/result.json",
+  "title": "RESULT",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "session_id", "event_id", "state", "phase", "reason_codes", "warnings", "model_version"],
+  "properties": {
+    "type": { "const": "RESULT" },
+    "session_id": { "type": "string" },
+    "event_id": { "type": "string" },
+    "state": {
+      "enum": ["no_change", "recheck", "caution", "unanalyzable", "skipped", "no_response"]
+    },
+    "phase": {
+      "enum": ["TRACKING", "CANDIDATE", "AWAITING_VOICE", "ANALYZING", "RESULT", "RECHECK", "ALERT", "AWAITING_RESOLVE"]
+    },
+    "change_score": { "type": ["number", "null"] },
+    "ewma_score": { "type": ["number", "null"] },
+    "reason_codes": { "type": "array", "items": { "type": "string" } },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "model_version": { "type": "string" },
+    "message_key": { "type": "string" }
+  }
+}

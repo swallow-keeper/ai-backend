@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://swallow-guardian.local/ws/alert.json",
+  "title": "ALERT",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "session_id", "event_id", "state", "message_key"],
+  "properties": {
+    "type": { "const": "ALERT" },
+    "session_id": { "type": "string" },
+    "event_id": { "type": "string" },
+    "state": { "const": "caution" },
+    "message_key": { "type": "string" }
+  }
+}
