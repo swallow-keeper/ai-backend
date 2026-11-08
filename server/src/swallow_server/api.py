@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
+from zoneinfo import ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Header, Query, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
@@ -17,11 +18,16 @@ from swallow_server.schemas import (
     DeletedOut,
     InterventionOut,
     SessionOut,
+    SessionIn,
+    SessionSummaryOut,
+    SessionReportOut,
+    HomeSummaryOut,
+    TrendOut,
     SwallowEventIn,
     SwallowEventOut,
 )
 from swallow_server import realtime
-from swallow_server.services import analysis, sessions
+from swallow_server.services import analysis, sessions, reports
 from swallow_server.tables import User
 
 router = APIRouter()
@@ -48,10 +54,6 @@ def current_user(
     return user
 
 
-def _not_implemented() -> None:
-    raise ApiError(501, "NOT_IMPLEMENTED", "1차 범위 아님")
-
-
 async def _read_clip(upload: UploadFile) -> bytes:
     blob = await upload.read()
     if len(blob) > MAX_UPLOAD_BYTES:
@@ -60,14 +62,14 @@ async def _read_clip(upload: UploadFile) -> bytes:
 
 
 @router.post("/sessions", response_model=SessionOut, status_code=201)
-def start_session(user: User = Depends(current_user), db: Session = Depends(get_db)) -> SessionOut:
-    meal = sessions.start_session(db, user, utcnow())
+def start_session(payload: SessionIn | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)) -> SessionOut:
+    meal = sessions.start_session(db, user, utcnow(), payload.meal if payload else None)
     return sessions.to_session_out(meal)
 
 
-@router.get("/sessions")
-def list_sessions() -> None:
-    _not_implemented()
+@router.get("/sessions", response_model=list[SessionSummaryOut])
+def list_sessions(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    return reports.list_sessions(db, user.id)
 
 
 @router.post("/sessions/{session_id}/end", response_model=SessionOut)
@@ -226,20 +228,26 @@ def delete_data(user: User = Depends(current_user), db: Session = Depends(get_db
     return DeletedOut(deleted=True)
 
 
-@router.get("/home/summary")
-def home_summary() -> None:
-    _not_implemented()
+@router.get("/home/summary", response_model=HomeSummaryOut)
+def home_summary(tz: str = "Asia/Seoul", user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    return reports.home(db, user.id, _zone(tz))
 
 
-@router.get("/sessions/{session_id}/report")
-def session_report(session_id: str) -> None:
-    del session_id
-    _not_implemented()
+@router.get("/sessions/{session_id}/report", response_model=SessionReportOut)
+def session_report(session_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    return reports.report(db, sessions.owned_session(db, user, session_id))
 
 
-@router.get("/reports/trend")
-def trend_report() -> None:
-    _not_implemented()
+@router.get("/reports/trend", response_model=TrendOut)
+def trend_report(period: Literal["day", "week", "month"] = "day", tz: str = "Asia/Seoul", user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    return reports.trend(db, user.id, period, _zone(tz))
+
+
+def _zone(name: str):
+    try:
+        return reports.local_zone(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ApiError(422, "VALIDATION", "올바른 시간대가 필요함") from None
 
 
 async def _publish(request: Request, session_id: str, result: AnalysisOut, attempt: int) -> None:

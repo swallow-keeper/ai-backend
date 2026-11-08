@@ -49,7 +49,9 @@ def median_and_spread(vectors: list[np.ndarray]) -> tuple[np.ndarray, float]:
     stack = np.stack([np.asarray(vector, dtype=np.float32) for vector in vectors])
     median = np.median(stack, axis=0).astype(np.float32)
     distances = np.linalg.norm(stack - median, axis=1)
-    return median, float(np.std(distances))
+    # Standard deviation of distances is zero for two equally distant, opposing
+    # recordings. RMS distance measures actual disagreement with the baseline.
+    return median, float(np.sqrt(np.mean(distances ** 2)))
 
 
 def baseline_reasons(passed_count: int, spread: float, min_passed: int, max_spread: float) -> list[str]:

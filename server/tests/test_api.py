@@ -158,7 +158,8 @@ def test_unanalyzable_then_skip_and_delete(tmp_path: Path):
         assert db.query(BaselineRecording).count() == 0
         assert user.id
         db.close()
-        assert client.get("/home/summary").status_code == 501
+        assert client.get("/home/summary").status_code == 401
+        assert client.get("/home/summary", headers=headers).json()["meal_count"] == 0
 
 
 def test_duplicate_swallow_is_merged(tmp_path: Path):

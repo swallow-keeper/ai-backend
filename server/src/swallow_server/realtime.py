@@ -41,6 +41,7 @@ def state_message(session_id: str, phase: str) -> dict:
 def result_message(session_id: str, result: AnalysisOut) -> dict:
     return {
         "type": "RESULT",
+        "result_id": result.result_id,
         "session_id": session_id,
         "event_id": result.event_id,
         "state": result.state,
