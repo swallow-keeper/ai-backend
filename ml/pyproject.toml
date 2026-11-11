@@ -6,6 +6,13 @@ dependencies = [
     "swallow-shared",
 ]
 
+[project.optional-dependencies]
+vision = ["mediapipe==0.10.35", "opencv-contrib-python>=4.11,<5"]
+
+[project.scripts]
+swallow-extract = "swallow_ml.motion:main"
+swallow-train = "swallow_ml.temporal:main"
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

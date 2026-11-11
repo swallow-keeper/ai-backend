@@ -335,13 +335,14 @@ def _store_clip(db, event, passed, reasons, warnings, report, now) -> VoiceClip:
 
 
 def _swallow_count(db: Session, session_id: str) -> int:
-    return db.query(SwallowEvent).filter_by(session_id=session_id).count()
+    return db.query(SwallowEvent).filter_by(session_id=session_id).filter(SwallowEvent.trigger != "periodic").count()
 
 
 def _store_result(db, event, clip_id, state, phase, change, smoothed, registry, reasons, warnings, context, now):
+    result_id = _new_id()
     db.add(
         AnalysisResult(
-            id=_new_id(),
+            id=result_id,
             event_id=event.id,
             clip_id=clip_id,
             state=state,
@@ -356,6 +357,7 @@ def _store_result(db, event, clip_id, state, phase, change, smoothed, registry, 
     )
     db.flush()
     return AnalysisOut(
+        result_id=result_id,
         event_id=event.id,
         clip_id=clip_id,
         state=state,

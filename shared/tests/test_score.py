@@ -60,6 +60,9 @@ def test_baseline_median_and_reasons():
     assert baseline_reasons(1, 0.0, 2, 0.05) == ["BASELINE_TOO_FEW"]
     assert baseline_reasons(3, 0.2, 2, 0.05) == ["BASELINE_UNSTABLE"]
     assert baseline_reasons(3, 0.01, 2, 0.05) == []
+    _, opposing_spread = median_and_spread([np.array([-1.0, 0.0]), np.array([1.0, 0.0])])
+    assert opposing_spread == pytest.approx(1.0)
+    assert baseline_reasons(2, opposing_spread, 2, .12) == ["BASELINE_UNSTABLE"]
 
 
 def test_mel_pool_same_pitch_is_closer_and_registry_loads():

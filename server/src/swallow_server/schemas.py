@@ -6,8 +6,13 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class SessionIn(BaseModel):
+    meal: Literal["breakfast", "lunch", "dinner", "snack"] | None = None
+
+
 class SessionOut(BaseModel):
     id: str
+    meal: str | None = None
     phase: str
     started_at: datetime
     ended_at: datetime | None = None
@@ -27,6 +32,7 @@ class SwallowEventIn(BaseModel):
     trigger: Literal["auto", "manual", "periodic"]
     detected_at: datetime | None = None
     camera_confidence: float | None = Field(default=None, ge=0, le=1)
+    request_voice: bool = True
 
 
 class SwallowEventOut(BaseModel):
@@ -40,6 +46,7 @@ class SwallowEventOut(BaseModel):
 
 
 class AnalysisOut(BaseModel):
+    result_id: str | None = None
     event_id: str
     clip_id: str | None = None
     state: str
@@ -78,3 +85,51 @@ class ConsentOut(BaseModel):
 
 class DeletedOut(BaseModel):
     deleted: bool
+
+
+class SessionSummaryOut(SessionOut):
+    duration_seconds: float
+    swallow_count: int
+    caution_count: int
+    no_change_count: int
+
+
+class ReportEventOut(BaseModel):
+    id: str
+    detected_at: datetime
+    trigger: str
+    state: str | None
+    duration_seconds: float | None
+    reason_codes: list[str]
+    spectrogram_url: str | None = None
+    baseline_spectrogram_url: str | None = None
+
+
+class SessionReportOut(BaseModel):
+    session: SessionSummaryOut
+    baseline_quality_flag: str | None
+    model_version: str | None
+    unanalyzable_count: int
+    skipped_count: int
+    no_response_count: int
+    events: list[ReportEventOut]
+    disclaimer: str
+
+
+class HomeSummaryOut(BaseModel):
+    meal_count: int
+    swallow_count: int
+    caution_count: int
+    recent: list[SessionSummaryOut]
+
+
+class TrendPointOut(BaseModel):
+    label: str
+    swallow_count: int
+    no_change_ratio: float | None
+    caution_count: int
+
+
+class TrendOut(BaseModel):
+    period: Literal["day", "week", "month"]
+    points: list[TrendPointOut]

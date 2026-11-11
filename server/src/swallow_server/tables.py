@@ -38,6 +38,7 @@ class MealSession(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    meal: Mapped[str | None] = mapped_column(String(20), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     phase: Mapped[str] = mapped_column(String(32), default="TRACKING")

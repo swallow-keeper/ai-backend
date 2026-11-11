@@ -1,511 +1,1009 @@
 openapi: 3.1.0
 info:
-  title: 삼킴지킴이 API
+  title: 삼킴지킴이
   version: 0.1.0
-  description: >
-    비임상 연구용 프로토타입. 흡인을 진단하지 않습니다.
-    결과는 개인 기준 대비 음성 변화이며, 임상 성능이 아닙니다.
-    영상 업로드 경로는 없습니다.
-servers:
-  - url: http://localhost:8000
-security:
-  - bearerAuth: []
-tags:
-  - name: sessions
-  - name: events
-  - name: me
-  - name: later
+  description: 연구용 음성 변화 분석 API. 흡인을 진단하지 않습니다. 기본 앱은 이 API 대신 온디바이스 분석을 사용하며, 서버
+    모드는 개발 환경에서 명시적으로 선택합니다.
 paths:
   /sessions:
     post:
-      tags: [sessions]
-      operationId: startSession
-      summary: 식사 세션 시작
+      summary: Start Session
+      operationId: start_session_sessions_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/SessionIn'
+              - type: 'null'
+              title: Payload
       responses:
-        "201":
-          description: 생성된 세션
+        '201':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Session"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
+                $ref: '#/components/schemas/SessionOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     get:
-      tags: [later]
-      operationId: listSessions
-      summary: 최근 식사 목록, 1차 미구현
+      summary: List Sessions
+      operationId: list_sessions_sessions_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
-        "501":
-          $ref: "#/components/responses/NotImplemented"
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SessionSummaryOut'
+                title: Response List Sessions Sessions Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /sessions/{session_id}/end:
     post:
-      tags: [sessions]
-      operationId: endSession
-      summary: 식사 세션 종료
+      summary: End Session
+      operationId: end_session_sessions__session_id__end_post
       parameters:
-        - $ref: "#/components/parameters/SessionId"
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
-        "200":
-          description: 종료된 세션
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Session"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
+                $ref: '#/components/schemas/SessionOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /sessions/{session_id}/baseline:
     post:
-      tags: [sessions]
-      operationId: registerBaseline
-      summary: 기준 음성 3개 등록
-      description: PCM16 WAV 3개. 통과 클립 임베딩의 중앙값과 산포를 저장하고 원본은 폐기합니다.
+      summary: Register Baseline
+      operationId: register_baseline_sessions__session_id__baseline_post
       parameters:
-        - $ref: "#/components/parameters/SessionId"
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
-              type: object
-              required: [clip_1, clip_2, clip_3]
-              properties:
-                clip_1:
-                  type: string
-                  format: binary
-                clip_2:
-                  type: string
-                  format: binary
-                clip_3:
-                  type: string
-                  format: binary
+              $ref: '#/components/schemas/Body_register_baseline_sessions__session_id__baseline_post'
       responses:
-        "200":
-          description: 기준 등록 결과. stable이 false면 저장하지 않고 재녹음이 필요합니다.
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/BaselineResult"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        "413":
-          $ref: "#/components/responses/TooLarge"
+                $ref: '#/components/schemas/BaselineOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /sessions/{session_id}/swallow-events:
     post:
-      tags: [sessions]
-      operationId: reportSwallowEvent
-      summary: 삼킴 후보 보고
-      description: 자동, 수동, 주기 트리거를 같은 형식으로 받습니다. 영상 바이트는 받지 않습니다.
+      summary: Report Swallow
+      operationId: report_swallow_sessions__session_id__swallow_events_post
       parameters:
-        - $ref: "#/components/parameters/SessionId"
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SwallowEventIn"
+              $ref: '#/components/schemas/SwallowEventIn'
       responses:
-        "201":
-          description: 접수된 이벤트. merged가 true면 새 발성 요청을 만들지 않습니다.
+        '201':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SwallowEventOut"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
+                $ref: '#/components/schemas/SwallowEventOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /events/{event_id}/voice-clip:
     post:
-      tags: [events]
-      operationId: submitVoiceClip
-      summary: 삼킴 후 2초 발성 업로드와 분석
+      summary: Submit Voice
+      operationId: submit_voice_events__event_id__voice_clip_post
       parameters:
-        - $ref: "#/components/parameters/EventId"
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Event Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
-              type: object
-              required: [clip]
-              properties:
-                clip:
-                  type: string
-                  format: binary
+              $ref: '#/components/schemas/Body_submit_voice_events__event_id__voice_clip_post'
       responses:
-        "200":
-          description: 분석 결과. 원본 음성은 응답 전에 폐기됩니다.
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnalysisResult"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        "413":
-          $ref: "#/components/responses/TooLarge"
+                $ref: '#/components/schemas/AnalysisOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /events/{event_id}/skip:
     post:
-      tags: [events]
-      operationId: skipVoice
-      summary: 발성 건너뜀
+      summary: Skip Voice
+      operationId: skip_voice_events__event_id__skip_post
       parameters:
-        - $ref: "#/components/parameters/EventId"
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Event Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
-        "200":
-          description: 건너뜀 기록
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnalysisResult"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
+                $ref: '#/components/schemas/AnalysisOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /events/{event_id}/resolve:
     post:
-      tags: [events]
-      operationId: resolveIntervention
-      summary: 처치 완료
+      summary: Resolve Event
+      operationId: resolve_event_events__event_id__resolve_post
       parameters:
-        - $ref: "#/components/parameters/EventId"
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Event Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
-        "200":
-          description: 알림부터 처치 완료까지의 지속시간
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Intervention"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
+                $ref: '#/components/schemas/InterventionOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /me/consents:
     post:
-      tags: [me]
-      operationId: recordConsent
-      summary: 동의 기록
+      summary: Record Consent
+      operationId: record_consent_me_consents_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ConsentIn"
+              $ref: '#/components/schemas/ConsentIn'
       responses:
-        "201":
-          description: 저장된 동의
+        '201':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Consent"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+                $ref: '#/components/schemas/ConsentOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /me/data:
     delete:
-      tags: [me]
-      operationId: deleteMyData
-      summary: 내 데이터 삭제
-      description: 동의 철회를 포함해 해당 사용자의 세션, 임베딩, 점수를 삭제합니다.
+      summary: Delete Data
+      operationId: delete_data_me_data_delete
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
-        "200":
-          description: 삭제 완료
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Deleted"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
+                $ref: '#/components/schemas/DeletedOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /home/summary:
     get:
-      tags: [later]
-      operationId: homeSummary
-      summary: 홈 요약, 1차 미구현
+      summary: Home Summary
+      operationId: home_summary_home_summary_get
+      parameters:
+      - name: tz
+        in: query
+        required: false
+        schema:
+          type: string
+          default: Asia/Seoul
+          title: Tz
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
-        "501":
-          $ref: "#/components/responses/NotImplemented"
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HomeSummaryOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /sessions/{session_id}/report:
     get:
-      tags: [later]
-      operationId: sessionReport
-      summary: 식사 보고서, 1차 미구현
+      summary: Session Report
+      operationId: session_report_sessions__session_id__report_get
       parameters:
-        - $ref: "#/components/parameters/SessionId"
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
-        "501":
-          $ref: "#/components/responses/NotImplemented"
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionReportOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /reports/trend:
     get:
-      tags: [later]
-      operationId: trendReport
-      summary: 일·주·월 추이, 1차 미구현
+      summary: Trend Report
+      operationId: trend_report_reports_trend_get
+      parameters:
+      - name: period
+        in: query
+        required: false
+        schema:
+          enum:
+          - day
+          - week
+          - month
+          type: string
+          default: day
+          title: Period
+      - name: tz
+        in: query
+        required: false
+        schema:
+          type: string
+          default: Asia/Seoul
+          title: Tz
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
-        "501":
-          $ref: "#/components/responses/NotImplemented"
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrendOut'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
+  schemas:
+    AnalysisOut:
+      properties:
+        result_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Result Id
+        event_id:
+          type: string
+          title: Event Id
+        clip_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Clip Id
+        state:
+          type: string
+          title: State
+        phase:
+          type: string
+          title: Phase
+        change_score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Change Score
+        ewma_score:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Ewma Score
+        reason_codes:
+          items:
+            type: string
+          type: array
+          title: Reason Codes
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+        model_version:
+          type: string
+          title: Model Version
+        tau1:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Tau1
+        tau2:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Tau2
+        message_key:
+          type: string
+          title: Message Key
+      type: object
+      required:
+      - event_id
+      - state
+      - phase
+      - model_version
+      - message_key
+      title: AnalysisOut
+    BaselineOut:
+      properties:
+        stable:
+          type: boolean
+          title: Stable
+        passed_count:
+          type: integer
+          title: Passed Count
+        spread:
+          type: number
+          title: Spread
+        reason_codes:
+          items:
+            type: string
+          type: array
+          title: Reason Codes
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+        model_version:
+          type: string
+          title: Model Version
+        quality_flag:
+          type: string
+          title: Quality Flag
+      type: object
+      required:
+      - stable
+      - passed_count
+      - spread
+      - reason_codes
+      - warnings
+      - model_version
+      - quality_flag
+      title: BaselineOut
+    Body_register_baseline_sessions__session_id__baseline_post:
+      properties:
+        clip_1:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Clip 1
+        clip_2:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Clip 2
+        clip_3:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Clip 3
+      type: object
+      required:
+      - clip_1
+      - clip_2
+      - clip_3
+      title: Body_register_baseline_sessions__session_id__baseline_post
+    Body_submit_voice_events__event_id__voice_clip_post:
+      properties:
+        clip:
+          type: string
+          contentMediaType: application/octet-stream
+          title: Clip
+      type: object
+      required:
+      - clip
+      title: Body_submit_voice_events__event_id__voice_clip_post
+    ConsentIn:
+      properties:
+        item:
+          type: string
+          enum:
+          - voice_analysis
+          - research_optional
+          title: Item
+        granted:
+          type: boolean
+          title: Granted
+        guardian:
+          type: boolean
+          title: Guardian
+          default: false
+      type: object
+      required:
+      - item
+      - granted
+      title: ConsentIn
+    ConsentOut:
+      properties:
+        id:
+          type: string
+          title: Id
+        item:
+          type: string
+          title: Item
+        granted:
+          type: boolean
+          title: Granted
+        guardian:
+          type: boolean
+          title: Guardian
+        recorded_at:
+          type: string
+          format: date-time
+          title: Recorded At
+      type: object
+      required:
+      - id
+      - item
+      - granted
+      - guardian
+      - recorded_at
+      title: ConsentOut
+    DeletedOut:
+      properties:
+        deleted:
+          type: boolean
+          title: Deleted
+      type: object
+      required:
+      - deleted
+      title: DeletedOut
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HomeSummaryOut:
+      properties:
+        meal_count:
+          type: integer
+          title: Meal Count
+        swallow_count:
+          type: integer
+          title: Swallow Count
+        caution_count:
+          type: integer
+          title: Caution Count
+        recent:
+          items:
+            $ref: '#/components/schemas/SessionSummaryOut'
+          type: array
+          title: Recent
+      type: object
+      required:
+      - meal_count
+      - swallow_count
+      - caution_count
+      - recent
+      title: HomeSummaryOut
+    InterventionOut:
+      properties:
+        event_id:
+          type: string
+          title: Event Id
+        alerted_at:
+          type: string
+          format: date-time
+          title: Alerted At
+        resolved_at:
+          type: string
+          format: date-time
+          title: Resolved At
+        duration_seconds:
+          type: number
+          title: Duration Seconds
+        phase:
+          type: string
+          title: Phase
+      type: object
+      required:
+      - event_id
+      - alerted_at
+      - resolved_at
+      - duration_seconds
+      - phase
+      title: InterventionOut
+    ReportEventOut:
+      properties:
+        id:
+          type: string
+          title: Id
+        detected_at:
+          type: string
+          format: date-time
+          title: Detected At
+        trigger:
+          type: string
+          title: Trigger
+        state:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: State
+        duration_seconds:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Duration Seconds
+        reason_codes:
+          items:
+            type: string
+          type: array
+          title: Reason Codes
+        spectrogram_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Spectrogram Url
+        baseline_spectrogram_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Baseline Spectrogram Url
+      type: object
+      required:
+      - id
+      - detected_at
+      - trigger
+      - state
+      - duration_seconds
+      - reason_codes
+      title: ReportEventOut
+    SessionIn:
+      properties:
+        meal:
+          anyOf:
+          - type: string
+            enum:
+            - breakfast
+            - lunch
+            - dinner
+            - snack
+          - type: 'null'
+          title: Meal
+      type: object
+      title: SessionIn
+    SessionOut:
+      properties:
+        id:
+          type: string
+          title: Id
+        meal:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Meal
+        phase:
+          type: string
+          title: Phase
+        started_at:
+          type: string
+          format: date-time
+          title: Started At
+        ended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ended At
+      type: object
+      required:
+      - id
+      - phase
+      - started_at
+      title: SessionOut
+    SessionReportOut:
+      properties:
+        session:
+          $ref: '#/components/schemas/SessionSummaryOut'
+        baseline_quality_flag:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Baseline Quality Flag
+        model_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Version
+        unanalyzable_count:
+          type: integer
+          title: Unanalyzable Count
+        skipped_count:
+          type: integer
+          title: Skipped Count
+        no_response_count:
+          type: integer
+          title: No Response Count
+        events:
+          items:
+            $ref: '#/components/schemas/ReportEventOut'
+          type: array
+          title: Events
+        disclaimer:
+          type: string
+          title: Disclaimer
+      type: object
+      required:
+      - session
+      - baseline_quality_flag
+      - model_version
+      - unanalyzable_count
+      - skipped_count
+      - no_response_count
+      - events
+      - disclaimer
+      title: SessionReportOut
+    SessionSummaryOut:
+      properties:
+        id:
+          type: string
+          title: Id
+        meal:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Meal
+        phase:
+          type: string
+          title: Phase
+        started_at:
+          type: string
+          format: date-time
+          title: Started At
+        ended_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ended At
+        duration_seconds:
+          type: number
+          title: Duration Seconds
+        swallow_count:
+          type: integer
+          title: Swallow Count
+        caution_count:
+          type: integer
+          title: Caution Count
+        no_change_count:
+          type: integer
+          title: No Change Count
+      type: object
+      required:
+      - id
+      - phase
+      - started_at
+      - duration_seconds
+      - swallow_count
+      - caution_count
+      - no_change_count
+      title: SessionSummaryOut
+    SwallowEventIn:
+      properties:
+        trigger:
+          type: string
+          enum:
+          - auto
+          - manual
+          - periodic
+          title: Trigger
+        detected_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Detected At
+        camera_confidence:
+          anyOf:
+          - type: number
+            maximum: 1.0
+            minimum: 0.0
+          - type: 'null'
+          title: Camera Confidence
+        request_voice:
+          type: boolean
+          title: Request Voice
+          default: true
+      type: object
+      required:
+      - trigger
+      title: SwallowEventIn
+    SwallowEventOut:
+      properties:
+        id:
+          type: string
+          title: Id
+        session_id:
+          type: string
+          title: Session Id
+        trigger:
+          type: string
+          title: Trigger
+        camera_confidence:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Camera Confidence
+        phase:
+          type: string
+          title: Phase
+        prompt:
+          type: boolean
+          title: Prompt
+        merged:
+          type: boolean
+          title: Merged
+      type: object
+      required:
+      - id
+      - session_id
+      - trigger
+      - camera_confidence
+      - phase
+      - prompt
+      - merged
+      title: SwallowEventOut
+    TrendOut:
+      properties:
+        period:
+          type: string
+          enum:
+          - day
+          - week
+          - month
+          title: Period
+        points:
+          items:
+            $ref: '#/components/schemas/TrendPointOut'
+          type: array
+          title: Points
+      type: object
+      required:
+      - period
+      - points
+      title: TrendOut
+    TrendPointOut:
+      properties:
+        label:
+          type: string
+          title: Label
+        swallow_count:
+          type: integer
+          title: Swallow Count
+        no_change_ratio:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: No Change Ratio
+        caution_count:
+          type: integer
+          title: Caution Count
+      type: object
+      required:
+      - label
+      - swallow_count
+      - no_change_ratio
+      - caution_count
+      title: TrendPointOut
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
-  parameters:
-    SessionId:
-      name: session_id
-      in: path
-      required: true
-      schema:
-        type: string
-    EventId:
-      name: event_id
-      in: path
-      required: true
-      schema:
-        type: string
-  responses:
-    Unauthorized:
-      description: 인증 실패
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorBody"
-    Forbidden:
-      description: 동의 없음 또는 권한 없음
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorBody"
-    NotFound:
-      description: 대상 없음
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorBody"
-    Conflict:
-      description: 현재 단계에서 허용되지 않는 요청
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorBody"
-    TooLarge:
-      description: 업로드 크기 또는 길이 초과
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorBody"
-    NotImplemented:
-      description: 2차 범위
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorBody"
-  schemas:
-    ErrorBody:
-      type: object
-      required: [error]
-      properties:
-        error:
-          type: object
-          required: [code, message]
-          properties:
-            code:
-              type: string
-            message:
-              type: string
-    Phase:
-      type: string
-      enum:
-        - TRACKING
-        - CANDIDATE
-        - AWAITING_VOICE
-        - ANALYZING
-        - RESULT
-        - RECHECK
-        - ALERT
-        - AWAITING_RESOLVE
-    ResultState:
-      type: string
-      enum:
-        - no_change
-        - recheck
-        - caution
-        - unanalyzable
-        - skipped
-        - no_response
-    Trigger:
-      type: string
-      enum: [auto, manual, periodic]
-    Session:
-      type: object
-      required: [id, phase, started_at]
-      properties:
-        id:
-          type: string
-        phase:
-          $ref: "#/components/schemas/Phase"
-        started_at:
-          type: string
-          format: date-time
-        ended_at:
-          type: string
-          format: date-time
-          nullable: true
-    BaselineResult:
-      type: object
-      required: [stable, passed_count, spread, reason_codes, warnings, model_version, quality_flag]
-      properties:
-        stable:
-          type: boolean
-        passed_count:
-          type: integer
-        spread:
-          type: number
-        reason_codes:
-          type: array
-          items:
-            type: string
-        warnings:
-          type: array
-          items:
-            type: string
-        model_version:
-          type: string
-        quality_flag:
-          type: string
-    SwallowEventIn:
-      type: object
-      required: [trigger]
-      properties:
-        trigger:
-          $ref: "#/components/schemas/Trigger"
-        detected_at:
-          type: string
-          format: date-time
-        camera_confidence:
-          type: number
-          minimum: 0
-          maximum: 1
-          nullable: true
-    SwallowEventOut:
-      type: object
-      required: [id, session_id, trigger, phase, prompt, merged]
-      properties:
-        id:
-          type: string
-        session_id:
-          type: string
-        trigger:
-          $ref: "#/components/schemas/Trigger"
-        camera_confidence:
-          type: number
-          nullable: true
-        phase:
-          $ref: "#/components/schemas/Phase"
-        prompt:
-          type: boolean
-        merged:
-          type: boolean
-    AnalysisResult:
-      type: object
-      required: [event_id, state, phase, reason_codes, warnings, model_version]
-      properties:
-        event_id:
-          type: string
-        clip_id:
-          type: string
-          nullable: true
-        state:
-          $ref: "#/components/schemas/ResultState"
-        phase:
-          $ref: "#/components/schemas/Phase"
-        change_score:
-          type: number
-          nullable: true
-        ewma_score:
-          type: number
-          nullable: true
-        reason_codes:
-          type: array
-          items:
-            type: string
-        warnings:
-          type: array
-          items:
-            type: string
-        model_version:
-          type: string
-        tau1:
-          type: number
-          nullable: true
-        tau2:
-          type: number
-          nullable: true
-        message_key:
-          type: string
-    Intervention:
-      type: object
-      required: [event_id, alerted_at, resolved_at, duration_seconds, phase]
-      properties:
-        event_id:
-          type: string
-        alerted_at:
-          type: string
-          format: date-time
-        resolved_at:
-          type: string
-          format: date-time
-        duration_seconds:
-          type: number
-        phase:
-          $ref: "#/components/schemas/Phase"
-    ConsentIn:
-      type: object
-      required: [item, granted]
-      properties:
-        item:
-          type: string
-          enum: [voice_analysis, research_optional]
-        granted:
-          type: boolean
-        guardian:
-          type: boolean
-          default: false
-    Consent:
-      type: object
-      required: [id, item, granted, guardian, recorded_at]
-      properties:
-        id:
-          type: string
-        item:
-          type: string
-        granted:
-          type: boolean
-        guardian:
-          type: boolean
-        recorded_at:
-          type: string
-          format: date-time
-    Deleted:
-      type: object
-      required: [deleted]
-      properties:
-        deleted:
-          type: boolean
+security:
+- bearerAuth: []

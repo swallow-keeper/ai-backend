@@ -34,6 +34,7 @@ def test_socket_resync_prompt_and_result(tmp_path):
             phase = socket.receive_json()
             assert result["type"] == "RESULT"
             assert result["state"] == "no_change"
+            assert result["result_id"] == scored.json()["result_id"]
             assert phase == {"type": "STATE", "session_id": session_id, "phase": "TRACKING"}
 
 

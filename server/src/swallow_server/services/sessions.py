@@ -25,11 +25,12 @@ from swallow_server.tables import (
 _WAITING = {"AWAITING_VOICE", "RECHECK"}
 
 
-def start_session(db: Session, user: User, now: datetime | None = None) -> MealSession:
+def start_session(db: Session, user: User, now: datetime | None = None, slot: str | None = None) -> MealSession:
     now = now or utcnow()
     meal = MealSession(
         id=uuid4().hex,
         user_id=user.id,
+        meal=slot,
         started_at=now,
         phase="TRACKING",
         mild_streak=0,
@@ -44,6 +45,10 @@ def end_session(db: Session, meal: MealSession, registry: Registry, now: datetim
     if meal.ended_at is not None:
         raise ApiError(409, "WRONG_PHASE", "이미 종료된 세션임")
     expire_if_needed(db, meal, registry, now)
+    if meal.open_event_id and meal.phase in _WAITING:
+        event = db.get(SwallowEvent, meal.open_event_id)
+        if event is not None:
+            mark_terminal(db, meal, event, "skipped", registry, now)
     meal.ended_at = now
     meal.phase = "TRACKING"
     meal.open_event_id = None
@@ -87,13 +92,13 @@ def report_swallow(
         detected_at=detected,
         trigger=payload.trigger,
         camera_confidence=payload.camera_confidence,
-        status="open",
+        status="open" if payload.request_voice else "counted",
         attempt_count=0,
-        voice_deadline=now + timedelta(seconds=registry.voice_timeout_seconds),
+        voice_deadline=(now + timedelta(seconds=registry.voice_timeout_seconds)) if payload.request_voice else None,
         created_at=now,
     )
-    meal.phase = "AWAITING_VOICE"
-    meal.open_event_id = event.id
+    meal.phase = "AWAITING_VOICE" if payload.request_voice else "TRACKING"
+    meal.open_event_id = event.id if payload.request_voice else None
     meal.last_event_id = event.id
     db.add(event)
     db.commit()
@@ -103,7 +108,7 @@ def report_swallow(
         trigger=event.trigger,
         camera_confidence=event.camera_confidence,
         phase=meal.phase,
-        prompt=True,
+        prompt=payload.request_voice,
         merged=False,
     )
 
@@ -218,4 +223,4 @@ def delete_user_data(db: Session, user: User) -> None:
 
 
 def to_session_out(meal: MealSession) -> SessionOut:
-    return SessionOut(id=meal.id, phase=meal.phase, started_at=meal.started_at, ended_at=meal.ended_at)
+    return SessionOut(id=meal.id, meal=meal.meal, phase=meal.phase, started_at=meal.started_at, ended_at=meal.ended_at)
