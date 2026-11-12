@@ -105,3 +105,17 @@ def test_full_replay_retains_untrackable_truth_and_rejects_subject_leakage(tmp_p
     manifest.write_text(json.dumps([entry]))
     with pytest.raises(ValueError, match="training or validation"):
         evaluate(manifest, weights, tmp_path / "face.task")
+
+
+def test_replay_interpolates_jitter_but_does_not_bridge_missing_frames():
+    network = TCN(hidden=3)
+    model = network.export(np.zeros(6), np.ones(6), 1e-10, {"trained": False})
+    watch = ReplayWatch(model, network)
+    for i in range(15):
+        assert watch.push([i * .13] * 6, i * 130) is None
+    expected = np.array([[(1950 - (15 - i) * 125) / 1000] * 6 for i in range(16)])
+    assert watch.push([1.95] * 6, 1950) == pytest.approx(network.predict(expected[None])[0])
+    missing = ReplayWatch(model, network)
+    for i in range(16):
+        if i not in (5, 6):
+            assert missing.push([i * .13] * 6, i * 130) is None

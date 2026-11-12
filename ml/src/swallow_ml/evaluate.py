@@ -73,10 +73,19 @@ class ReplayWatch:
         window = []
         for i in range(16):
             target = timestamp - (15 - i) * 125
-            closest = min(self.history, key=lambda row: abs(row[0] - target))
-            if abs(closest[0] - target) > 100:
+            right = next((j for j, row in enumerate(self.history) if row[0] >= target), None)
+            if right is None:
                 return None
-            window.append(closest[1])
+            after = self.history[right]
+            if after[0] == target:
+                window.append(after[1]); continue
+            if right == 0:
+                return None
+            before = self.history[right - 1]
+            if after[0] - before[0] > 250:
+                return None
+            fraction = (target - before[0]) / (after[0] - before[0])
+            window.append(before[1] + fraction * (after[1] - before[1]))
         inputs = (np.asarray(window) - self.model["mean"]) / self.model["scale"]
         probability = float(self.network.predict(inputs[None])[0])
         if probability < self.model["threshold"]:
