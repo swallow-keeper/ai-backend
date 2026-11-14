@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+remote-key.json
+connection-status.json
+*.tmp
+*.log
