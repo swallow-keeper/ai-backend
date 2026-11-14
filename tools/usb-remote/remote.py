@@ -61,7 +61,9 @@ class RemoteLink:
             elif "BUSY" in result:
                 self.publish("ignored", "기준 발성·녹음·결과 창 중에는 새 입력을 받지 않습니다.")
             else: self.publish("error", "입력 처리를 확인하지 못했어요. 폰의 모니터링 상태를 확인해 주세요.")
-        except Exception as error: self.publish("error", str(error))
+        except Exception as error:
+            self.connected = False
+            self.publish("disconnected", str(error))
         finally:
             self.sending = False
             self.publish("done", "")
@@ -242,4 +244,8 @@ if __name__ == "__main__":
             await remote.trigger()
         asyncio.run(send_once())
     else:
-        run_window(auto_connect=True)
+        if "--window" in sys.argv:
+            run_window(auto_connect=True)
+        else:
+            from background import run_background
+            asyncio.run(run_background())

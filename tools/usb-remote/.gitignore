@@ -4,3 +4,4 @@ remote-key.json
 connection-status.json
 *.tmp
 *.log
+stop-background.request
